@@ -36,7 +36,7 @@
     "fieldType": "msg",
     "format": "handlebars",
     "syntax": "mustache",
-    "template": "name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,nw\nFlowPower,hybrid,1.3419,0,0,0,0,0,0,0.45,0,0,0,0,0,0,0,0,17.5,19.5,0.45,0.33998,0\nOrigin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,0,0,0,0,0\nGlobird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,0,0,0,0,0\nCovaU SolarMax,fixed_tou,1.3,0,0.2802,0.2802,0.6139,0.05,0.05,0.05,0,0,11,14,17,21,17,21,0,0,0,0,0\nAmber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0.05",
+    "template": "name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,nw\nFlowPower,hybrid,1.3419,0,0,0,0,0,0,0.45,0,0,0,0,0,0,0,0,17.5,19.5,0.45,0.33998,0\nOrigin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,0,0,0,0,0\nGlobird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,0,0,0,0,0\nCovaU SolarMax,fixed_tou,1.3,0,0.2802,0.2802,0.6139,0.05,0.05,0.05,0,0,11,14,17,21,17,21,0,0,0,0,0\nAmber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0.05\nTest Retailer,fixed_tou,0.5,0,0.2,0.2,0.5,0.05,0.05,0.05,0,0,0,0,0,0,0,0,0,0,0,0,0",
     "x": 200,
     "y": 140,
     "wires": [
