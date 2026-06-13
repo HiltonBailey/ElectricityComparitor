@@ -108,8 +108,8 @@
     "type": "function",
     "z": "tab_energy_retailer_comparison",
     "name": "Build Sensor Messages",
-    "func": "const totals = msg.payload.totals;\nconst retailers = msg.payload.retailers;\nconst cheapest = msg.payload.cheapest;\nconst savings = msg.payload.savings;\nconst pea = msg.payload.pea;\nconst flowRate = msg.payload.flowRate;\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst msgs = [];\nretailers.forEach(r => {\n    const value = Math.round(totals[r.name].net * 100) / 100;\n    const attrs = { friendly_name: r.name + ' Daily Cost', unit_of_measurement: '$', icon: 'mdi:cash', retailer_model: r.model, import_cost: Math.round(totals[r.name].import * 100) / 100, export_credit: Math.round(totals[r.name].export * 100) / 100 };\n    if (r.model === 'hybrid') { attrs.pea = pea.toFixed(6); attrs.flow_rate = flowRate.toFixed(4); attrs.adj_import = Math.round(totals[r.name].adjImport * 100) / 100; attrs.adj_export = Math.round(totals[r.name].adjExport * 100) / 100; attrs.exp_outside_45c = Math.round(totals[r.name].expOutside45c * 100) / 100; }\n    msgs.push({ payload: JSON.stringify({ state: value.toString(), attributes: attrs }), url: haUrl + '/api/states/' + r.sensor_id, headers: { Authorization: authHeader } });\n});\nmsgs.push({ payload: JSON.stringify({ state: cheapest, attributes: { friendly_name: 'Cheapest Retailer Today', icon: 'mdi:trophy' } }), url: haUrl + '/api/states/sensor.retailer_cheapest', headers: { Authorization: authHeader } });\nmsgs.push({ payload: JSON.stringify({ state: savings.toString(), attributes: { friendly_name: 'Savings vs Flow Today', unit_of_measurement: '$', icon: 'mdi:piggy-bank' } }), url: haUrl + '/api/states/sensor.retailer_savings', headers: { Authorization: authHeader } });\nmsgs.forEach(m => node.send(m));",
-    "outputs": 1,
+    "func": "const totals = msg.payload.totals;\nconst retailers = msg.payload.retailers;\nconst cheapest = msg.payload.cheapest;\nconst savings = msg.payload.savings;\nconst pea = msg.payload.pea;\nconst flowRate = msg.payload.flowRate;\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst msgs = [];\nconst currentIds = retailers.map(r => r.sensor_id);\nconst previousIds = flow.get('retailer_sensor_ids') || [];\nconst staleIds = previousIds.filter(id => !currentIds.includes(id));\nretailers.forEach(r => {\n    const value = Math.round(totals[r.name].net * 100) / 100;\n    const attrs = { friendly_name: r.name + ' Daily Cost', unit_of_measurement: '$', icon: 'mdi:cash', retailer_model: r.model, import_cost: Math.round(totals[r.name].import * 100) / 100, export_credit: Math.round(totals[r.name].export * 100) / 100 };\n    if (r.model === 'hybrid') { attrs.pea = pea.toFixed(6); attrs.flow_rate = flowRate.toFixed(4); attrs.adj_import = Math.round(totals[r.name].adjImport * 100) / 100; attrs.adj_export = Math.round(totals[r.name].adjExport * 100) / 100; attrs.exp_outside_45c = Math.round(totals[r.name].expOutside45c * 100) / 100; }\n    msgs.push({ payload: JSON.stringify({ state: value.toString(), attributes: attrs }), url: haUrl + '/api/states/' + r.sensor_id, headers: { Authorization: authHeader } });\n});\nmsgs.push({ payload: JSON.stringify({ state: cheapest, attributes: { friendly_name: 'Cheapest Retailer Today', icon: 'mdi:trophy' } }), url: haUrl + '/api/states/sensor.retailer_cheapest', headers: { Authorization: authHeader } });\nmsgs.push({ payload: JSON.stringify({ state: savings.toString(), attributes: { friendly_name: 'Savings vs Flow Today', unit_of_measurement: '$', icon: 'mdi:piggy-bank' } }), url: haUrl + '/api/states/sensor.retailer_savings', headers: { Authorization: authHeader } });\nflow.set('retailer_sensor_ids', currentIds);\nconst deleteMsgs = staleIds.map(id => ({ url: haUrl + '/api/states/' + id, method: 'DELETE', headers: { Authorization: authHeader } }));\nnode.send([msgs, deleteMsgs]);",
+    "outputs": 2,
     "timeout": "",
     "noerr": 0,
     "initialize": "",
@@ -120,6 +120,9 @@
     "wires": [
       [
         "ha_rest_api"
+      ],
+      [
+        "ha_rest_api_delete"
       ]
     ]
   },
@@ -355,9 +358,7 @@
     "x": 1160,
     "y": 500,
     "wires": [
-      [
-        "debug_globird_5min"
-      ]
+      []
     ]
   },
   {
@@ -449,5 +450,34 @@
     ],
     "x": 640,
     "y": 1060
+  },
+  {
+    "id": "ha_rest_api_delete",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "name": "DELETE Stale Sensor",
+    "method": "DELETE",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      }
+    ],
+    "x": 1200,
+    "y": 160,
+    "wires": [
+      []
+    ]
   }
 ]
