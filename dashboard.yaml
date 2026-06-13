@@ -11,6 +11,14 @@ sections:
     column_span: 4
     cards:
       - type: heading
+        heading: Monthly Summary
+      - type: custom:html-card
+        title: Monthly Cost Summary
+        content: |
+          [[ sensor.retailer_monthly_summary.attributes.html ]]
+        grid_options:
+          columns: full
+      - type: heading
         heading: Daily Energy Breakdown
       - type: custom:html-card
         title: Daily Cost Summary
