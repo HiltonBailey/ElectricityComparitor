@@ -1,0 +1,453 @@
+[
+  {
+    "id": "tab_energy_retailer_comparison",
+    "type": "tab",
+    "label": "EnergyRetailerComparison",
+    "disabled": false,
+    "info": "Dynamic multi-retailer electricity cost comparison.",
+    "wires": []
+  },
+  {
+    "id": "inject_trigger",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Every 5 minutes",
+    "props": [],
+    "repeat": "300",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "10",
+    "topic": "",
+    "x": 160,
+    "y": 60,
+    "wires": [
+      [
+        "retailer_config_template",
+        "read_csv_file"
+      ]
+    ]
+  },
+  {
+    "id": "retailer_config_template",
+    "type": "template",
+    "z": "tab_energy_retailer_comparison",
+    "name": "RETAILER CONFIG - Edit Here",
+    "field": "payload",
+    "fieldType": "msg",
+    "format": "handlebars",
+    "syntax": "mustache",
+    "template": "name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,nw\nFlowPower,hybrid,1.3419,0,0,0,0,0,0,0.45,0,0,0,0,0,0,0,0,17.5,19.5,0.45,0.33998,0\nOrigin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,0,0,0,0,0\nGlobird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,0,0,0,0,0\nCovaU SolarMax,fixed_tou,1.3,0,0.2802,0.2802,0.6139,0.05,0.05,0.05,0,0,11,14,17,21,17,21,0,0,0,0,0\nAmber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0.05",
+    "x": 200,
+    "y": 140,
+    "wires": [
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "store_config",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Store Config",
+    "func": "const lines = msg.payload.split('\\n');\nconst headers = lines[0].split(',');\nconst retailers = [];\nfor (let i = 1; i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < headers.length) continue;\n    const r = {};\n    for (let j = 0; j < headers.length; j++) {\n        r[headers[j].trim()] = row[j].trim();\n    }\n    ['dsc','sub','off_pk','sh_pk','pk_pk','off_fit','sh_fit','pk_fit','sp_fit',\n     'off_s','off_e','pk_s','pk_e','sp_s','sp_e','sp_limit','exp_s','exp_e','exp_rate','base','nw'\n    ].forEach(f => { r[f] = parseFloat(r[f]) || 0; });\n    r.sensor_id = 'sensor.retailer_' + r.name.toLowerCase().replace(/\\s+/g, '_') + '_daily';\n    retailers.push(r);\n}\nflow.set('retailers', retailers);\n// node.warn('Config loaded: ' + retailers.map(r => r.name).join(', '));\nreturn null;",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "read_csv_file",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Read 5minelec.csv",
+    "filename": "/share/file_notifications/5minelec.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "allProps": false,
+    "x": 420,
+    "y": 60,
+    "wires": [
+      [
+        "calculate_costs"
+      ]
+    ]
+  },
+  {
+    "id": "calculate_costs",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Calculate Costs (PEA)",
+    "func": "const retailers = flow.get('retailers');\nif (!retailers || retailers.length === 0) { // node.warn('No retailers configured'); return null; }\nconst csvData = msg.payload;\nconst lines = csvData.split('\\n');\n// node.warn('Total lines: ' + lines.length);\nfor (let i = 1; i < Math.min(lines.length, 4); i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    // node.warn('First rows: created=[' + row[0].trim() + '] PE=[' + row[12].trim() + ']');\n}\nfor (let i = Math.max(1, lines.length - 4); i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    // node.warn('Last rows: created=[' + row[0].trim() + '] PE=[' + row[12].trim() + ']');\n}\nconst NW_OFFPEAK = 0.051535;\nconst NW_PEAK = 0.29245;\nconst NW_PEAK_START = 15;\nconst NW_PEAK_END = 21;\nconst FLOW_EXPORT_KW = 18;\nfunction getNetworkCost(dt) {\n    const hour = dt.getHours();\n    const dow = dt.getDay();\n    if (dow >= 1 && dow <= 5 && hour >= NW_PEAK_START && hour < NW_PEAK_END) return NW_PEAK;\n    return NW_OFFPEAK;\n}\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction toLocalDateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nconst now = new Date();\nconst today = toLocalDateStr(now);\nconst yesterday = new Date(now);\nyesterday.setDate(yesterday.getDate() - 1);\nconst yesterdayStr = toLocalDateStr(yesterday);\nlet billingYear = now.getFullYear();\nlet billingMonth = now.getMonth();\nif (now.getDate() < 4) { billingMonth--; if (billingMonth < 0) { billingMonth = 11; billingYear--; } }\nconst billingStart = new Date(billingYear, billingMonth, 4);\nconst billingEnd = new Date(billingYear, billingMonth + 1, 3, 23, 59, 59);\nconst billingStartStr = toLocalDateStr(billingStart);\nconst billingEndStr = toLocalDateStr(billingEnd);\nlet twapSum = 0, twapCount = 0, lwapNum = 0, lwapDen = 0;\nlet bpPrevOff = 0, bpPrevSh = 0, bpPrevPk = 0, bpPrevDay = '';\nfor (let i = 1; i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    const periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    const rowDateStr = periodEnding.split(' ')[0];\n    if (rowDateStr >= billingStartStr && rowDateStr <= billingEndStr) {\n        const dt = new Date(periodEnding.replace(' ', 'T'));\n        const aemo = parseFloat(row[11]) || 0;\n        const cumOff = parseFloat(row[1]) || 0;\n        const cumSh = parseFloat(row[2]) || 0;\n        const cumPk = parseFloat(row[3]) || 0;\n        if (rowDateStr !== bpPrevDay) { bpPrevOff = 0; bpPrevSh = 0; bpPrevPk = 0; bpPrevDay = rowDateStr; }\n        const importKwh = Math.max(0, (cumOff - bpPrevOff) + (cumSh - bpPrevSh) + (cumPk - bpPrevPk));\n        bpPrevOff = cumOff; bpPrevSh = cumSh; bpPrevPk = cumPk;\n        const inclNW = aemo + getNetworkCost(dt);\n        twapSum += inclNW; twapCount++;\n        lwapNum += inclNW * importKwh; lwapDen += importKwh;\n    }\n}\nconst twap = twapCount > 0 ? twapSum / twapCount : 0;\nconst lwap = lwapDen > 0 ? lwapNum / lwapDen : 0;\nconst pea = (lwap - twap) - 0.017;\nconst flowPower = retailers.find(r => r.name === 'FlowPower');\nconst flowBase = flowPower ? flowPower.base : 0.33998;\nconst flowRate = flowBase + pea;\n// node.warn('PEA: ' + pea.toFixed(6) + ', TWAP: ' + twap.toFixed(4) + ', LWAP: ' + lwap.toFixed(4) + ', Rate: ' + flowRate.toFixed(4) + ', Today: ' + today + ', BP: ' + billingStartStr + ' to ' + billingEndStr);\n\n// --- DAILY SUMMARY ---\nconst dailyData = {};\nlet prevExport = 0, prevOffpeak = 0, prevShoulder = 0, prevPeak = 0, prevDay = '';\nfor (let i = 1; i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    const periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    const rowDateStr = periodEnding.split(' ')[0];\n    if (rowDateStr < billingStartStr || rowDateStr > billingEndStr) {\n        const rowDay = periodEnding.split(' ')[0];\n        if (rowDay !== prevDay) { prevExport = 0; prevOffpeak = 0; prevShoulder = 0; prevPeak = 0; prevDay = rowDay; }\n        continue;\n    }\n    if (rowDateStr !== prevDay) {\n        prevExport = 0; prevOffpeak = 0; prevShoulder = 0; prevPeak = 0;\n        if (!dailyData[rowDateStr]) {\n            dailyData[rowDateStr] = {};\n            retailers.forEach(r => {\n                dailyData[rowDateStr][r.name] = {\n                    import: 0, export: 0, net: 0,\n                    adjImport: 0, adjExport: 0, expOutside45c: 0,\n                    intervals: 0, lastTime: '', totalImport: 0, totalExport: 0,\n                    eveningImport: 0,\n                    spExportUsed: 0\n                };\n            });\n        }\n        prevDay = rowDateStr;\n    }\n    const cumOffpeak = parseFloat(row[1]) || 0;\n    const cumShoulder = parseFloat(row[2]) || 0;\n    const cumPeak = parseFloat(row[3]) || 0;\n    const cumExport = parseFloat(row[4]) || 0;\n    const aemoPrice = parseFloat(row[11]) || 0;\n    const offpeakKwh = Math.max(0, cumOffpeak - prevOffpeak);\n    const shoulderKwh = Math.max(0, cumShoulder - prevShoulder);\n    const peakKwh = Math.max(0, cumPeak - prevPeak);\n    const exportKwh = Math.max(0, cumExport - prevExport);\n    prevOffpeak = cumOffpeak; prevShoulder = cumShoulder; prevPeak = cumPeak; prevExport = cumExport;\n    const timeParts = periodEnding.split(' ')[1].split(':');\n    const hour = parseInt(timeParts[0]);\n    const minute = parseInt(timeParts[1]);\n    const hourDecimal = hour + minute / 60;\n    const totalImport = offpeakKwh + shoulderKwh + peakKwh;\n    const dd = dailyData[rowDateStr];\n    retailers.forEach(r => {\n        const d = dd[r.name];\n        d.intervals++;\n        d.lastTime = periodEnding.split(' ')[1];\n        d.totalImport += totalImport;\n        d.totalExport += exportKwh;\n        if (hourDecimal < 17.5 || hourDecimal >= 19.5) { d.expOutside45c -= exportKwh; }\n        if (hourDecimal >= 18 && hourDecimal < 21) { d.eveningImport += totalImport; }\n        if (r.model === 'fixed_tou') {\n            d.import += offpeakKwh * r.off_pk + shoulderKwh * r.sh_pk + peakKwh * r.pk_pk;\n            // Feed-in priority: super peak (with daily limit) > peak > off-peak > shoulder (default)\n            if (hourDecimal >= r.sp_s && hourDecimal < r.sp_e && r.sp_limit > 0) {\n                // Super peak window with daily export limit\n                var remaining = r.sp_limit - d.spExportUsed;\n                if (remaining > 0) {\n                    var spPortion = Math.min(exportKwh, remaining);\n                    var fbPortion = exportKwh - spPortion;\n                    d.spExportUsed += spPortion;\n                    d.export += spPortion * r.sp_fit;\n                    if (fbPortion > 0) {\n                        var fbRate = r.sh_fit;\n                        if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) fbRate = r.pk_fit;\n                        else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) fbRate = r.off_fit;\n                        d.export += fbPortion * fbRate;\n                    }\n                } else {\n                    var fbRate = r.sh_fit;\n                    if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) fbRate = r.pk_fit;\n                    else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) fbRate = r.off_fit;\n                    d.export += exportKwh * fbRate;\n                }\n            } else {\n                var expRate = r.sh_fit;\n                if (hourDecimal >= r.sp_s && hourDecimal < r.sp_e) expRate = r.sp_fit;\n                else if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) expRate = r.pk_fit;\n                else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) expRate = r.off_fit;\n                d.export += exportKwh * expRate;\n            }\n        } else if (r.model === 'hybrid') {\n            d.import += totalImport * flowRate;\n        } else if (r.model === 'variable') {\n            const dt = new Date(periodEnding.replace(' ', 'T'));\n            const importRate = aemoPrice + getNetworkCost(dt);\n            d.import += totalImport * importRate;\n            d.export += exportKwh * aemoPrice * r.exp_rate;\n        }\n    });\n}\n\n// Build detailed daily summary\nconst dailySummary = {};\nconst days = Object.keys(dailyData).sort();\ndays.forEach(day => {\n    const d0 = dailyData[day][retailers[0].name];\n    dailySummary[day] = {\n        totalImport: Math.round(d0.totalImport * 1000) / 1000,\n        totalExport: Math.round(d0.totalExport * 1000) / 1000,\n        retailers: {}\n    };\n    let cheapestNet = Infinity, cheapestName = '';\n    retailers.forEach(r => {\n        const d = dailyData[day][r.name];\n        if (r.model === 'hybrid') {\n            const lastTimeParts = d.lastTime.split(':');\n            const lastHour = parseInt(lastTimeParts[0]);\n            const lastMinute = parseInt(lastTimeParts[1]);\n            const lastHourDecimal = lastHour + lastMinute / 60;\n            const adjImport = Math.max(0, d.totalImport + d.expOutside45c);\n            let adjExport;\n            if (lastHourDecimal < 19.5) { adjExport = d.totalExport + d.expOutside45c; }\n            else { adjExport = FLOW_EXPORT_KW; }\n            d.adjImport = adjImport; d.adjExport = adjExport;\n            d.export = adjExport * r.exp_rate;\n            d.net = r.dsc + (adjImport * flowRate) - (adjExport * r.exp_rate);\n        } else {\n            d.net = d.import - d.export + r.dsc;\n        }\n        // Globird evening rebate\n        if (r.name.indexOf('Globird') >= 0 && d.eveningImport < 0.09) {\n            d.net -= 1.00;\n            d.gloRebate = 1.00;\n        } else {\n            d.gloRebate = 0;\n        }\n        dailySummary[day].retailers[r.name] = {\n            dsc: Math.round(r.dsc * 100) / 100,\n            import: Math.round(d.import * 100) / 100,\n            export: Math.round(d.export * 100) / 100,\n            net: Math.round(d.net * 100) / 100,\n            gloRebate: d.gloRebate || 0\n        };\n        if (d.net < cheapestNet) { cheapestNet = d.net; cheapestName = r.name; }\n    });\n    dailySummary[day].cheapest = cheapestName;\n});\n\n// --- TODAY'S COSTS ---\nconst todayData = dailyData[today];\nconst totals = {};\nretailers.forEach(r => { totals[r.name] = { import: 0, export: 0, net: 0, adjImport: 0, adjExport: 0, expOutside45c: 0 }; });\nif (todayData) {\n    retailers.forEach(r => {\n        const d = todayData[r.name];\n        totals[r.name] = { import: Math.round(d.import * 100) / 100, export: Math.round(d.export * 100) / 100, net: Math.round(d.net * 100) / 100, adjImport: Math.round(d.adjImport * 100) / 100, adjExport: Math.round(d.adjExport * 100) / 100, expOutside45c: Math.round(d.expOutside45c * 100) / 100 };\n    });\n}\nlet cheapestName = retailers[0].name;\nlet cheapestNet = totals[retailers[0].name].net;\nretailers.forEach(r => { if (totals[r.name].net < cheapestNet) { cheapestNet = totals[r.name].net; cheapestName = r.name; } });\nconst flowpowerNet = totals['FlowPower'] ? totals['FlowPower'].net : 0;\n\n// --- 5-MIN DETAIL FOR ALL FIXED_TOU RETAILERS (ALL DATES IN BILLING PERIOD) ---\nconst fixedTouRetailers = retailers.filter(r => r.model === 'fixed_tou');\nconst fiveMinDetail = {};\n\nif (fixedTouRetailers.length > 0) {\n    // Build CSV lookup for ALL dates in billing period\n    const csvByDate = {};\n    let prevExport = 0, prevOff = 0, prevSh = 0, prevPk = 0, prevDay = '';\n    for (let i = 1; i < lines.length; i++) {\n        const row = lines[i].split(',');\n        if (row.length < 14) continue;\n        const periodEnding = row[12].trim();\n        if (!periodEnding) continue;\n        const rowDateStr = periodEnding.split(' ')[0];\n        if (rowDateStr < billingStartStr || rowDateStr > billingEndStr) {\n            const rowDay = periodEnding.split(' ')[0];\n            if (rowDay !== prevDay) { prevExport = 0; prevOff = 0; prevSh = 0; prevPk = 0; prevDay = rowDay; }\n            continue;\n        }\n        if (rowDateStr !== prevDay) {\n            prevExport = 0; prevOff = 0; prevSh = 0; prevPk = 0; prevDay = rowDateStr;\n            if (!csvByDate[rowDateStr]) csvByDate[rowDateStr] = {};\n        }\n        const cumOff = parseFloat(row[1]) || 0;\n        const cumSh = parseFloat(row[2]) || 0;\n        const cumPk = parseFloat(row[3]) || 0;\n        const cumExp = parseFloat(row[4]) || 0;\n        const oKwh = Math.max(0, cumOff - prevOff);\n        const sKwh = Math.max(0, cumSh - prevSh);\n        const pKwh = Math.max(0, cumPk - prevPk);\n        const eKwh = Math.max(0, cumExp - prevExport);\n        prevOff = cumOff; prevSh = cumSh; prevPk = cumPk; prevExport = cumExp;\n        const timeParts = periodEnding.split(' ')[1].split(':');\n        const csvHour = parseInt(timeParts[0]);\n        const csvMin = parseInt(timeParts[1]);\n        const roundedMin = Math.floor(csvMin / 5) * 5;\n        const timeKey = pad2(csvHour) + ':' + pad2(roundedMin);\n        csvByDate[rowDateStr][timeKey] = { oKwh, sKwh, pKwh, eKwh };\n    }\n\n    // Generate 5-min detail for each retailer and each date\n    fixedTouRetailers.forEach(retailer => {\n        fiveMinDetail[retailer.name] = {};\n        const dates = Object.keys(csvByDate).sort();\n        dates.forEach(dateStr => {\n            const dayCSV = csvByDate[dateStr];\n            const intervals = [];\n            let eveningImport = 0;\n            let spExportUsed = 0;\n            for (let h = 0; h < 24; h++) {\n                for (let m = 0; m < 60; m += 5) {\n                    const timeKey = pad2(h) + ':' + pad2(m);\n                    const hourDecimal = h + m / 60;\n                    const csv = dayCSV[timeKey];\n                    const oKwh = csv ? csv.oKwh : 0;\n                    const sKwh = csv ? csv.sKwh : 0;\n                    const pKwh = csv ? csv.pKwh : 0;\n                    const eKwh = csv ? csv.eKwh : 0;\n                    const totalImport = oKwh + sKwh + pKwh;\n                    if (hourDecimal >= 18 && hourDecimal < 21) eveningImport += totalImport;\n                    let touPeriod = 'Shoulder';\n                    let impRate = retailer.sh_pk;\n                    let expRate = retailer.sh_fit;\n                    if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) {\n                        touPeriod = 'Offpeak'; impRate = retailer.off_pk;\n                    } else if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) {\n                        touPeriod = 'Peak'; impRate = retailer.pk_pk;\n                    }\n                    // Feed-in priority: super peak (with daily limit) > peak > off-peak > shoulder (default)\n                    if (hourDecimal >= retailer.sp_s && hourDecimal < retailer.sp_e && retailer.sp_limit > 0) {\n                        var remaining = retailer.sp_limit - spExportUsed;\n                        if (remaining > 0) {\n                            var spPortion = Math.min(eKwh, remaining);\n                            var fbPortion = eKwh - spPortion;\n                            spExportUsed += spPortion;\n                            expRate = retailer.sp_fit;\n                            var fbRate = retailer.sh_fit;\n                            if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) fbRate = retailer.pk_fit;\n                            else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) fbRate = retailer.off_fit;\n                            if (fbPortion > 0) {\n                                expRate = (spPortion * retailer.sp_fit + fbPortion * fbRate) / eKwh;\n                            }\n                        } else {\n                            expRate = retailer.sh_fit;\n                            if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) expRate = retailer.pk_fit;\n                            else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) expRate = retailer.off_fit;\n                        }\n                    } else {\n                        if (hourDecimal >= retailer.sp_s && hourDecimal < retailer.sp_e) expRate = retailer.sp_fit;\n                        else if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) expRate = retailer.pk_fit;\n                        else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) expRate = retailer.off_fit;\n                    }\n                    const impCost = totalImport * impRate;\n                    const expCredit = eKwh * expRate;\n                    intervals.push({\n                        time: timeKey,\n                        impKwh: Math.round(totalImport * 1000) / 1000,\n                        expKwh: Math.round(eKwh * 1000) / 1000,\n                        touPeriod: touPeriod,\n                        impRate: impRate,\n                        expRate: expRate,\n                        impCost: Math.round(impCost * 1000) / 1000,\n                        expCredit: Math.round(expCredit * 1000) / 1000\n                    });\n                }\n            }\n            let netTotal = 0;\n            intervals.forEach(r => { netTotal += r.impCost - r.expCredit; });\n            let rebate = 0;\n            if (retailer.name.indexOf('Globird') >= 0 && eveningImport < 0.09) rebate = 1.00;\n            netTotal += retailer.dsc - rebate;\n            intervals.push({\n                time: 'TOTAL',\n                impKwh: '', expKwh: '', touPeriod: '',\n                impRate: '', expRate: '',\n                impCost: '', expCredit: '',\n                eveningImport: eveningImport,\n                netTotal: Math.round(netTotal * 100) / 100,\n                dsc: retailer.dsc,\n                rebate: rebate\n            });\n            fiveMinDetail[retailer.name][dateStr] = { intervals, summary: { eveningImport, netTotal: Math.round(netTotal * 100) / 100, dsc: retailer.dsc, rebate } };\n        });\n    });\n}\n\n// Store 5-min data in flow variable for HTTP endpoint (not in HA sensor)\nflow.set('fiveMinDetail', fiveMinDetail);\n// Also store metadata for the HA sensor\nconst fmRetailers = Object.keys(fiveMinDetail);\nconst fmDates = [...new Set(Object.values(fiveMinDetail).flatMap(r => Object.keys(r)))].sort();\nmsg.payload.fmRetailers = fmRetailers;\nmsg.payload.fmDates = fmDates;\n\n// For backward compatibility, also set globird5min for yesterday\nconst globird5min = fiveMinDetail['Globird VPP'] ? fiveMinDetail['Globird VPP'][yesterdayStr]?.intervals || [] : [];\n\nmsg.payload = { totals, retailers, cheapest: cheapestName, savings: Math.round((flowpowerNet - cheapestNet) * 100) / 100, pea, flowRate, dailySummary, globird5min, fmRetailers, fmDates, todayDate: yesterdayStr };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 660,
+    "y": 60,
+    "wires": [
+      [
+        "build_sensor_messages",
+        "build_daily_summary",
+        "build_daily_detail",
+        "build_five_min_detail"
+      ]
+    ]
+  },
+  {
+    "id": "build_sensor_messages",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Build Sensor Messages",
+    "func": "const totals = msg.payload.totals;\nconst retailers = msg.payload.retailers;\nconst cheapest = msg.payload.cheapest;\nconst savings = msg.payload.savings;\nconst pea = msg.payload.pea;\nconst flowRate = msg.payload.flowRate;\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst msgs = [];\nretailers.forEach(r => {\n    const value = Math.round(totals[r.name].net * 100) / 100;\n    const attrs = { friendly_name: r.name + ' Daily Cost', unit_of_measurement: '$', icon: 'mdi:cash', retailer_model: r.model, import_cost: Math.round(totals[r.name].import * 100) / 100, export_credit: Math.round(totals[r.name].export * 100) / 100 };\n    if (r.model === 'hybrid') { attrs.pea = pea.toFixed(6); attrs.flow_rate = flowRate.toFixed(4); attrs.adj_import = Math.round(totals[r.name].adjImport * 100) / 100; attrs.adj_export = Math.round(totals[r.name].adjExport * 100) / 100; attrs.exp_outside_45c = Math.round(totals[r.name].expOutside45c * 100) / 100; }\n    msgs.push({ payload: JSON.stringify({ state: value.toString(), attributes: attrs }), url: haUrl + '/api/states/' + r.sensor_id, headers: { Authorization: authHeader } });\n});\nmsgs.push({ payload: JSON.stringify({ state: cheapest, attributes: { friendly_name: 'Cheapest Retailer Today', icon: 'mdi:trophy' } }), url: haUrl + '/api/states/sensor.retailer_cheapest', headers: { Authorization: authHeader } });\nmsgs.push({ payload: JSON.stringify({ state: savings.toString(), attributes: { friendly_name: 'Savings vs Flow Today', unit_of_measurement: '$', icon: 'mdi:piggy-bank' } }), url: haUrl + '/api/states/sensor.retailer_savings', headers: { Authorization: authHeader } });\nmsgs.forEach(m => node.send(m));",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 60,
+    "wires": [
+      [
+        "ha_rest_api"
+      ]
+    ]
+  },
+  {
+    "id": "build_daily_summary",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Build Daily Summary",
+    "func": "const dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst days = Object.keys(dailySummary).sort();\nconst rNames = retailers.map(r => r.name);\n\n// Scrollable table with fixed header\nlet html = '<div style=\"max-height:400px;overflow-y:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index:1\">';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:100px\">Date</th>';\nrNames.forEach(name => { html += '<th style=\"padding:4px;text-align:right\">' + name + '</th>'; });\nhtml += '<th style=\"padding:4px;text-align:right;color:#4CAF50;min-width:100px\">Cheapest</th></tr></thead><tbody>';\ndays.forEach((day, idx) => {\n    const isToday = day === days[days.length - 1];\n    const bg = isToday ? 'background:#1a1a2e;' : (idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;');\n    const d = dailySummary[day];\n    html += '<tr style=\"' + bg + '\"><td style=\"padding:4px;text-align:left;color:#aaa\">' + day + '</td>';\n    rNames.forEach(name => {\n        const val = d.retailers[name].net;\n        const isCheapest = name === d.cheapest;\n        const color = isCheapest ? '#4CAF50' : 'white';\n        html += '<td style=\"padding:4px;text-align:right;color:' + color + '\">$' + val.toFixed(2) + '</td>';\n    });\n    html += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + d.cheapest + '</td></tr>';\n});\nhtml += '<tr style=\"background:#222;border-top:1px solid #555\"><td style=\"padding:4px;text-align:left;color:#aaa;font-weight:bold\">Total</td>';\nlet cheapestTotal = '', cheapestTotalVal = Infinity;\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    if (total < cheapestTotalVal) { cheapestTotalVal = total; cheapestTotal = name; }\n});\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    const color = name === cheapestTotal ? '#4CAF50' : 'white';\n    html += '<td style=\"padding:4px;text-align:right;color:' + color + ';font-weight:bold\">$' + total.toFixed(2) + '</td>';\n});\nhtml += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + cheapestTotal + '</td></tr>';\nhtml += '</tbody></table></div>';\n\nconst attrs = {\n    friendly_name: 'Daily Cost Summary',\n    icon: 'mdi:chart-bar',\n    days: days.length,\n    billing_period: days[0] + ' to ' + days[days.length - 1],\n    html: html\n};\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    attrs[name.toLowerCase().replace(/\\s+/g, '_') + '_total'] = Math.round(total * 100) / 100;\n});\nnode.send({\n    payload: JSON.stringify({ state: cheapestTotal + ' $' + cheapestTotalVal.toFixed(2), attributes: attrs }),\n    url: haUrl + '/api/states/sensor.retailer_daily_summary',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 260,
+    "wires": [
+      [
+        "ha_rest_api_daily"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_daily",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "name": "POST Daily Summary to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      },
+      {
+        "keyType": "Content-type",
+        "keyValue": "",
+        "valueType": "str",
+        "valueValue": "application/json"
+      }
+    ],
+    "x": 1160,
+    "y": 260,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "ha_rest_api",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "name": "POST to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      },
+      {
+        "keyType": "Content-type",
+        "keyValue": "",
+        "valueType": "str",
+        "valueValue": "application/json"
+      }
+    ],
+    "x": 1100,
+    "y": 100,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "store_ha_credentials",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Set HA URL + Token",
+    "func": "global.set('ha_url', 'http://192.168.50.9:8123');\nglobal.set('ha_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0NTQ1YjAwYWEwYTQ0YjRiYmZlN2FkMjIwMDlkMTgzZiIsImlhdCI6MTc4MTA3MjcwMCwiZXhwIjoyMDk2NDMyNzAwfQ.majW8v0wjDid-9rKMExUhG18xcYISsaijzxTaaYDq4U');\n// node.warn('HA credentials stored.');\nreturn null;",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "inject_init",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Click to set credentials",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "1",
+    "topic": "",
+    "x": 200,
+    "y": 220,
+    "wires": [
+      [
+        "store_ha_credentials"
+      ]
+    ]
+  },
+  {
+    "id": "build_daily_detail",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Build Daily Detail",
+    "func": "const dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst days = Object.keys(dailySummary).sort();\nconst rNames = retailers.map(r => r.name);\n\n// Scrollable table with fixed header\nlet html = '<div style=\"max-height:400px;overflow:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:11px;font-family:monospace;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index=1\">';\nhtml += '<th style=\"padding:3px 4px;text-align:left;border-bottom:1px solid #555;min-width:80px\" rowspan=\"2\">Date</th>';\nhtml += '<th style=\"padding:3px 4px;text-align:right;border-bottom:1px solid #555;min-width:70px\" rowspan=\"2\">Import<br>kWh</th>';\nhtml += '<th style=\"padding:3px 4px;text-align:right;border-bottom:1px solid #555;min-width:70px\" rowspan=\"2\">Export<br>kWh</th>';\nrNames.forEach(name => {\n    html += '<th style=\"padding:3px 4px;text-align:center;border-bottom:1px solid #555;border-left:1px solid #555\" colspan=\"5\">' + name + '</th>';\n});\nhtml += '<th style=\"padding:3px 4px;text-align:center;border-bottom:1px solid #555;border-left:1px solid #555\" rowspan=\"2\">Cheapest</th>';\nhtml += '</tr>';\nhtml += '<tr style=\"background:#333;color:#aaa\">';\nrNames.forEach(() => {\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:9px;border-left:1px solid #555\">DSC</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:9px\">Import</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:9px\">Export</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:9px\">Rebate</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:9px\">Net</th>';\n});\nhtml += '</tr>';\nhtml += '</thead><tbody>';\n\ndays.forEach((day, idx) => {\n    const isToday = day === days[days.length - 1];\n    const bg = isToday ? 'background:#1a1a2e;' : (idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;');\n    const d = dailySummary[day];\n    html += '<tr style=\"' + bg + '\">';\n    html += '<td style=\"padding:3px 4px;text-align:left;color:#aaa;border-bottom:1px solid #222\">' + day.substring(5) + '</td>';\n    html += '<td style=\"padding:3px 4px;text-align:right;color:#8cf;border-bottom:1px solid #222\">' + d.totalImport.toFixed(1) + '</td>';\n    html += '<td style=\"padding:3px 4px;text-align:right;color:#fc8;border-bottom:1px solid #222\">' + d.totalExport.toFixed(1) + '</td>';\n    rNames.forEach(name => {\n        const rd = d.retailers[name];\n        const isCheapest = name === d.cheapest;\n        const netColor = isCheapest ? '#4CAF50' : 'white';\n        const bl = 'border-left:1px solid #333;';\n        const rebate = rd.gloRebate || 0;\n        const rebateColor = rebate > 0 ? '#4CAF50' : '#888';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#888;font-size:9px;border-bottom:1px solid #222;' + bl + '\">$' + rd.dsc.toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#b8b8ff;font-size:9px;border-bottom:1px solid #222\">$' + rd.import.toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#8fbc8f;font-size:9px;border-bottom:1px solid #222\">$' + (-rd.export).toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:' + rebateColor + ';font-size:9px;border-bottom:1px solid #222\">$' + (-rebate).toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:' + netColor + ';font-size:9px;font-weight:bold;border-bottom:1px solid #222\">$' + rd.net.toFixed(2) + '</td>';\n    });\n    html += '<td style=\"padding:3px 4px;text-align:center;color:#4CAF50;font-weight:bold;border-bottom:1px solid #222;border-left:1px solid #333\">' + d.cheapest + '</td>';\n    html += '</tr>';\n});\n\nhtml += '<tr style=\"background:#222;border-top:2px solid #555\">';\nhtml += '<td style=\"padding:3px 4px;text-align:left;color:#aaa;font-weight:bold\">Total</td>';\nhtml += '<td colspan=\"2\" style=\"padding:3px 4px;border-bottom:1px solid #222\"></td>';\nlet cheapestTotal = '', cheapestTotalVal = Infinity;\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    if (total < cheapestTotalVal) { cheapestTotalVal = total; cheapestTotal = name; }\n});\nrNames.forEach(name => {\n    let tDsc = 0, tImp = 0, tExp = 0, tRebate = 0, tNet = 0;\n    days.forEach(day => { tDsc += dailySummary[day].retailers[name].dsc; tImp += dailySummary[day].retailers[name].import; tExp += dailySummary[day].retailers[name].export; tRebate += dailySummary[day].retailers[name].gloRebate || 0; tNet += dailySummary[day].retailers[name].net; });\n    const isCheapest = name === cheapestTotal;\n    const netColor = isCheapest ? '#4CAF50' : 'white';\n    const rebateColor = tRebate > 0 ? '#4CAF50' : '#888';\n    const bl = 'border-left:1px solid #333;';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#888;font-size:9px;font-weight:bold;border-bottom:1px solid #222;' + bl + '\">$' + tDsc.toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#b8b8ff;font-size:9px;font-weight:bold;border-bottom:1px solid #222\">$' + tImp.toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#8fbc8f;font-size:9px;font-weight:bold;border-bottom:1px solid #222\">$' + (-tExp).toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:' + rebateColor + ';font-size:9px;font-weight:bold;border-bottom:1px solid #222\">$' + (-tRebate).toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:' + netColor + ';font-size:9px;font-weight:bold;border-bottom:1px solid #222\">$' + tNet.toFixed(2) + '</td>';\n});\nhtml += '<td style=\"padding:3px 4px;text-align:center;color:#4CAF50;font-weight:bold;border-left:1px solid #333\">' + cheapestTotal + '</td>';\nhtml += '</tr></tbody></table></div>';\n\nconst attrs = {\n    friendly_name: 'Daily Cost Detail',\n    icon: 'mdi:table-large',\n    days: days.length,\n    billing_period: days[0] + ' to ' + days[days.length - 1],\n    html: html\n};\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    attrs[name.toLowerCase().replace(/\\s+/g, '_') + '_total'] = Math.round(total * 100) / 100;\n});\nnode.send({\n    payload: JSON.stringify({ state: cheapestTotal + ' $' + cheapestTotalVal.toFixed(2), attributes: attrs }),\n    url: haUrl + '/api/states/sensor.retailer_daily_detail',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 380,
+    "wires": [
+      [
+        "ha_rest_api_detail"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_detail",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "name": "POST Daily Detail to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      },
+      {
+        "keyType": "Content-type",
+        "keyValue": "",
+        "valueType": "str",
+        "valueValue": "application/json"
+      }
+    ],
+    "x": 1160,
+    "y": 380,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "build_five_min_detail",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Build 5-Min Detail (All Retailers)",
+    "func": "const fmRetailers = msg.payload.fmRetailers;\nconst fmDates = msg.payload.fmDates;\nif (!fmRetailers || fmRetailers.length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\n\n// Store data is in flow variable for HTTP endpoint\n// Send only lightweight metadata to HA\nnode.send({\n    payload: JSON.stringify({\n        state: String(fmRetailers.length) + ' retailers',\n        attributes: {\n            friendly_name: '5-Minute Detail (Data via HTTP)',\n            icon: 'mdi:table-large',\n            available_retailers: fmRetailers,\n            available_dates: fmDates\n        }\n    }),\n    url: haUrl + '/api/states/sensor.retailer_five_min_detail',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 500,
+    "wires": [
+      [
+        "ha_rest_api_five_min_detail"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_five_min_detail",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "name": "POST 5-Min Detail (All) to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      },
+      {
+        "keyType": "Content-type",
+        "keyValue": "",
+        "valueType": "str",
+        "valueValue": "application/json"
+      }
+    ],
+    "x": 1160,
+    "y": 500,
+    "wires": [
+      [
+        "debug_globird_5min"
+      ]
+    ]
+  },
+  {
+    "id": "http_in_01",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "name": "GET 5-min Detail",
+    "url": "/api/5min-detail",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 380,
+    "wires": [
+      [
+        "http_handler"
+      ]
+    ]
+  },
+  {
+    "id": "http_handler",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Generate 5-min HTML",
+    "func": "try {\n    const fiveMinDetail = flow.get('fiveMinDetail');\n    const sendJSON = (data, status) => {\n        msg.payload = JSON.stringify(data);\n        msg.statusCode = status || 200;\n        msg.headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };\n        node.send(msg);\n    };\n    if (!fiveMinDetail || Object.keys(fiveMinDetail).length === 0) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">No data. Wait for next 5-min update.</div>' });\n        return;\n    }\n    const query = msg.req.query || {};\n    const retailer = query.retailer || '';\n    const fromDate = query.from || '';\n    const toDate = query.to || '';\n    const availableRetailers = Object.keys(fiveMinDetail);\n    const allDates = [...new Set(Object.values(fiveMinDetail).flatMap(r => Object.keys(r)))].sort();\n    if (!retailer || !fromDate || !toDate) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">Specify retailer, from, and to query params.</div>', availableRetailers, allDates });\n        return;\n    }\n    if (!fiveMinDetail[retailer]) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">Retailer not found: ' + retailer + '</div>', availableRetailers, allDates });\n        return;\n    }\n    const retailerData = fiveMinDetail[retailer];\n    const matchedDates = Object.keys(retailerData).filter(d => d >= fromDate && d <= toDate).sort();\n    if (matchedDates.length === 0) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">No data for selected date range.</div>', availableRetailers, allDates });\n        return;\n    }\n    let html = '';\n    matchedDates.forEach(dateStr => {\n        const dayData = retailerData[dateStr];\n        if (!dayData || !dayData.intervals) return;\n        const intervals = dayData.intervals.slice(0, -1);\n        const summary = dayData.intervals[dayData.intervals.length - 1];\n        html += '<div style=\"margin-bottom:12px;border:1px solid #222;border-radius:6px;overflow:hidden\">';\n        html += '<div style=\"display:flex;justify-content:space-between;padding:6px 8px;background:#111;color:#aaa;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">';\n        html += '<span>' + dateStr + ' - ' + retailer + '</span>';\n        html += '<span>DSC: $' + (summary.dsc || 0).toFixed(2) + ' | Rebate: $' + (summary.rebate || 0).toFixed(2) + ' | Net: $' + (summary.netTotal || 0).toFixed(2) + '</span>';\n        html += '</div>';\n        html += '<div style=\"overflow-x:auto;overflow-y:auto;max-height:400px\">';\n        html += '<table style=\"width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed\">';\n        html += '<thead><tr style=\"background:#1a1a1a;color:white;position:sticky;top:0;z-index:1\">';\n        html += '<th style=\"padding:2px 4px;text-align:left;min-width:50px\">Time</th><th style=\"padding:2px 4px;text-align:left;min-width:40px\">TOU</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Imp kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Exp kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:70px\">Imp $/kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:70px\">Exp $/kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Imp $</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Exp $</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Net $</th>';\n        html += '</tr></thead><tbody>';\n        intervals.forEach(r => {\n            const net = r.impCost - r.expCredit;\n            const touColor = r.touPeriod === 'Offpeak' ? '#4fc3f7' : r.touPeriod === 'Peak' ? '#ff8a65' : '#ccc';\n            const touBg = r.touPeriod === 'Offpeak' ? 'background:#001a2e;' : r.touPeriod === 'Peak' ? 'background:#2e0d00;' : '';\n            html += '<tr style=\"' + touBg + '\">';\n            html += '<td style=\"padding:1px 4px;color:#aaa\">' + r.time + '</td>';\n            html += '<td style=\"padding:1px 4px;color:' + touColor + '\">' + r.touPeriod.substring(0, 3) + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#8cf\">' + (r.impKwh !== '' ? r.impKwh.toFixed(3) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#fc8\">' + (r.expKwh !== '' ? r.expKwh.toFixed(3) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#888\">' + (r.impRate !== '' ? r.impRate.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#888\">' + (r.expRate !== '' ? r.expRate.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#ff8a65\">' + (r.impCost !== '' ? r.impCost.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">' + (r.expCredit !== '' ? r.expCredit.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:' + (net < 0 ? '#4CAF50' : net > 0 ? '#ff5252' : '#aaa') + '\">' + (typeof net === 'number' ? net.toFixed(4) : '') + '</td>';\n            html += '</tr>';\n        });\n        html += '</tbody></table></div></div>';\n    });\n    sendJSON({ html, availableRetailers, allDates, selectedRetailer: retailer, from: fromDate, to: toDate });\n} catch(e) {\n    msg.payload = JSON.stringify({ html: '<div style=\"color:#f55;padding:20px;text-align:center\">Error: ' + e.message + '</div>' });\n    msg.statusCode = 200;\n    msg.headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };\n    node.send(msg);\n}",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "x": 400,
+    "y": 380,
+    "wires": [
+      [
+        "http_response"
+      ]
+    ]
+  },
+  {
+    "id": "http_response",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "name": "HTTP Response",
+    "x": 640,
+    "y": 380,
+    "wires": []
+  },
+  {
+    "id": "http_in_page",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "name": "GET 5-min Detail Page",
+    "url": "/api/5min-detail-page",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "http_page_handler"
+      ]
+    ],
+    "x": 180,
+    "y": 1060
+  },
+  {
+    "id": "http_page_handler",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Serve 5-min HTML Page",
+    "func": "try {\n    var fiveMinDetail = flow.get('fiveMinDetail');\n    var retailers = fiveMinDetail ? Object.keys(fiveMinDetail) : [];\n    var allDates = fiveMinDetail ? [...new Set(Object.values(fiveMinDetail).flatMap(function(r){return Object.keys(r)}))].sort() : [];\n    var query = msg.req.query || {};\n    var retailer = query.retailer || (retailers.length > 0 ? retailers[0] : '');\n    var fromDate = query.from || (allDates.length > 0 ? allDates[Math.max(0, allDates.length - 8)] : '');\n    var toDate = query.to || (allDates.length > 0 ? allDates[allDates.length - 1] : '');\n    var tableHtml = '<div style=\"color:#888;padding:20px;text-align:center\">Select a retailer and date range to load data.</div>';\n    if (retailer && fromDate && toDate && fiveMinDetail && fiveMinDetail[retailer]) {\n        var retailerData = fiveMinDetail[retailer];\n        var matchedDates = Object.keys(retailerData).filter(function(d){return d>=fromDate&&d<=toDate}).sort();\n        if (matchedDates.length > 0) {\n            tableHtml = '';\n            matchedDates.forEach(function(dateStr) {\n                var dayData = retailerData[dateStr];\n                if (!dayData || !dayData.intervals) return;\n                var intervals = dayData.intervals.slice(0, -1);\n                var summary = dayData.intervals[dayData.intervals.length - 1];\n                tableHtml += '<div style=\"margin-bottom:12px;border:1px solid #222;border-radius:6px\">';\n                tableHtml += '<div style=\"display:flex;justify-content:space-between;padding:6px 8px;background:#111;color:#aaa;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">';\n                tableHtml += '<span>'+dateStr+' - '+retailer+'</span>';\n                tableHtml += '<span>DSC: $'+(summary.dsc||0).toFixed(2)+' | Rebate: $'+(summary.rebate||0).toFixed(2)+' | Net: $'+(summary.netTotal||0).toFixed(2)+'</span>';\n                tableHtml += '</div>';\n                tableHtml += '<div>';\n                tableHtml += '<table style=\"width:100%;border-collapse:separate;font-size:10px;table-layout:fixed\">';\n                tableHtml += '<div class=\"gheader\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 60px 60px 60px;background:#1a1a1a;color:white;position:sticky;top:0;z-index:2;font-size:10px;border-bottom:1px solid #333\">';\n                tableHtml += '<div style=\"padding:2px 4px;text-align:left\">Time</div><div style=\"padding:2px 4px;text-align:left\">TOU</div><div style=\"padding:2px 4px;text-align:right\">Imp kWh</div><div style=\"padding:2px 4px;text-align:right\">Exp kWh</div><div style=\"padding:2px 4px;text-align:right\">Imp $/kWh</div><div style=\"padding:2px 4px;text-align:right\">Exp $/kWh</div><div style=\"padding:2px 4px;text-align:right\">Imp $</div><div style=\"padding:2px 4px;text-align:right\">Exp $</div><div style=\"padding:2px 4px;text-align:right\">Net $</div>';\n                tableHtml += '</div>';  // close gheader\n                var totalImp = 0, totalExp = 0;\n                    intervals.forEach(function(r) {\n                    var net = r.impCost - r.expCredit;\n                    var touColor = r.touPeriod === 'Offpeak' ? '#4fc3f7' : r.touPeriod === 'Peak' ? '#ff8a65' : '#ccc';\n                    var touBg = r.touPeriod === 'Offpeak' ? 'background:#001a2e;' : r.touPeriod === 'Peak' ? 'background:#2e0d00;' : '';\n                    tableHtml += '<div class=\"grow\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 60px 60px 60px;'+touBg+'\">';\n                    tableHtml += '<div style=\"padding:1px 4px;color:#aaa\">'+r.time+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;color:'+touColor+'\">'+r.touPeriod.substring(0,3)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8cf\">'+(r.impKwh!==''?r.impKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#fc8\">'+(r.expKwh!==''?r.expKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#888\">'+(r.impRate!==''?r.impRate.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#888\">'+(r.expRate!==''?r.expRate.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#ff8a65\">'+(r.impCost!==''?r.impCost.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">'+(r.expCredit!==''?r.expCredit.toFixed(4):'')+'</div>';\n                    totalImp += typeof r.impCost === 'number' ? r.impCost : 0;\n                    totalExp += typeof r.expCredit === 'number' ? r.expCredit : 0;\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:'+(net<0?'#4CAF50':net>0?'#ff5252':'#aaa')+'\">'+(typeof net==='number'?net.toFixed(4):'')+'</div>';\n                    tableHtml += '</div>';  // close grow\n                });\n                    var totalNet = totalImp - totalExp;\n                    tableHtml += '<div class=\"grow\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 60px 60px 60px;background:#1a1a1a;border-top:1px solid #555;font-weight:bold\">';\n                    tableHtml += '<div style=\"padding:1px 4px;color:#ccc\">TOTAL</div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#ff8a65\">'+totalImp.toFixed(4)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">'+totalExp.toFixed(4)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:'+(totalNet<0?'#4CAF50':totalNet>0?'#ff5252':'#aaa')+'\">'+totalNet.toFixed(4)+'</div>';\n                    tableHtml += '</div>';  // close total row\n                tableHtml += '</div>';  // close day-section\n            });\n        }\n    }\n    var optionsHtml = '<option value=\"\">-- Select Retailer --</option>';\n    retailers.forEach(function(r) {\n        var sel = r === retailer ? ' selected' : '';\n        optionsHtml += '<option value=\"'+r+'\"'+sel+'>'+r+'</option>';\n    });\n    msg.payload = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">';\n    msg.payload += '<style>body{margin:0;padding:8px;background:#000;color:#eee;font-family:monospace;font-size:13px}';\n    msg.payload += 'select,input{padding:6px 10px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;font-family:monospace;font-size:12px}';\n    msg.payload += 'select option{background:#222;color:#eee}';\n    msg.payload += 'select:focus,input:focus{outline:none;border-color:#4CAF50}';\n    msg.payload += 'button{padding:6px 14px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px}';\n    msg.payload += 'button:hover{background:#45a049}</style></head><body style=\"display:flex;flex-direction:column;height:100vh;margin:0;padding:8px;box-sizing:border-box;\">';\n    msg.payload += '<form method=\"GET\" style=\"display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px\">';\n    msg.payload += '<select name=\"retailer\" style=\"min-width:160px\" onchange=\"this.form.submit()\">'+optionsHtml+'</select>';\n    msg.payload += '<input type=\"date\" name=\"from\" value=\"'+fromDate+'\" onchange=\"this.form.submit()\">';\n    msg.payload += '<input type=\"date\" name=\"to\" value=\"'+toDate+'\" onchange=\"this.form.submit()\">';\n    msg.payload += '<noscript><button type=\"submit\">Load</button></noscript></form>';\n    msg.payload += '<div style=\"flex:1;overflow-y:auto;background:#000;border-radius:6px;font-family:monospace;font-size:10px;color:white;border-top:1px solid #333\">';\n    msg.payload += tableHtml;\n    msg.payload += '</div></body></html>';\n    msg.statusCode = 200;\n    msg.headers = { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' };\n    node.send(msg);\n} catch(e) {\n    msg.payload = 'Error: '+e.message;\n    msg.statusCode = 500;\n    msg.headers = { 'Content-Type': 'text/plain' };\n    node.send(msg);\n}",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "http_response_page"
+      ]
+    ],
+    "x": 420,
+    "y": 1060
+  },
+  {
+    "id": "http_response_page",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "name": "HTTP Response (Page)",
+    "wires": [
+      []
+    ],
+    "x": 640,
+    "y": 1060
+  }
+]
