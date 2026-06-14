@@ -1,8 +1,9 @@
 #!/bin/bash
 # Deploy ONLY the EnergyRetailerComparison flow tab to Node-RED via PUT /flow/:id
-# Injects the current git short hash as a version number into:
+# Injects version from VERSION file into:
 #   - Group node name (visible in Node-RED editor)
 #   - Sensor attributes (visible in HA dashboard)
+# Bump the version by editing VERSION and committing.
 # Usage: ./deploy.sh [node_red_flow.json]
 set -euo pipefail
 
@@ -13,10 +14,10 @@ NR_USER="${NR_USER:-stilgar}"
 NR_PASS="${NR_PASS:-Ha0118021669}"
 TAB_ID="tab_energy_retailer_comparison"
 
-# Get git version (short hash)
-GIT_VERSION="v$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+# Read version from VERSION file
+DEPLOY_VERSION="v$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "0.0")"
 
-echo "Deploying $GIT_VERSION ..."
+echo "Deploying $DEPLOY_VERSION ..."
 
 python3 -c "
 import json, sys
@@ -33,12 +34,12 @@ for n in data:
     elif n.get('z') == '$TAB_ID':
         # Inject version into group node name
         if n.get('type') == 'group' and 'Energy Retailer Comparison' in n.get('name', ''):
-            n['name'] = 'Energy Retailer Comparison $GIT_VERSION'
+            n['name'] = 'Energy Retailer Comparison $DEPLOY_VERSION'
         # Replace ##GIT_VERSION## placeholders in function/template code
         if 'func' in n:
-            n['func'] = n['func'].replace('##GIT_VERSION##', '$GIT_VERSION')
+            n['func'] = n['func'].replace('##GIT_VERSION##', '$DEPLOY_VERSION')
         if 'template' in n:
-            n['template'] = n['template'].replace('##GIT_VERSION##', '$GIT_VERSION')
+            n['template'] = n['template'].replace('##GIT_VERSION##', '$DEPLOY_VERSION')
         nodes.append(n)
 
 if not tab:
@@ -63,7 +64,7 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     -d @/tmp/flow_tab_payload.json)
 
 if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
-    echo "Success (HTTP $HTTP_CODE) — $TAB_ID updated to $GIT_VERSION."
+    echo "Success (HTTP $HTTP_CODE) — $TAB_ID updated to $DEPLOY_VERSION."
 else
     echo "Failed — HTTP $HTTP_CODE"
     curl -s -X PUT "$NR_URL/flow/$TAB_ID" \
