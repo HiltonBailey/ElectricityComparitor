@@ -14,37 +14,41 @@ sections:
           show: true
         graph_span: 14d
         series:
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+          - entity: sensor.retailer_daily_summary
             name: FlowPower
             type: column
-            data_fn: |
-              const data = JSON.parse(body).daily_data;
-              return data ? data.map(d => ({x: d.date, y: d['FlowPower'] || 0})) : [];
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Origin
             type: column
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Origin Loop Max'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Globird
             type: column
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Globird VPP'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: CovaU
             type: column
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['CovaU SolarMax'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Amber
             type: column
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Amber'] || 0}));
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber'] || 0]);
         apex_config:
           chart:
             animations:
@@ -63,36 +67,41 @@ sections:
           show: true
         graph_span: 31d
         series:
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+          - entity: sensor.retailer_daily_summary
             name: FlowPower
             type: line
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['FlowPower_cum'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Origin
             type: line
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Origin Loop Max_cum'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Globird
             type: line
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Globird VPP_cum'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: CovaU
             type: line
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['CovaU SolarMax_cum'] || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Amber
             type: line
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Amber_cum'] || 0}));
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber_cum'] || 0]);
         apex_config:
           chart:
             animations:
@@ -108,20 +117,22 @@ sections:
           show: true
         graph_span: 14d
         series:
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+          - entity: sensor.retailer_daily_summary
             name: Import
             type: column
             stack: kWh
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d.import_kwh || 0}));
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d.import_kwh || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Export
             type: column
             stack: kWh
-            data_fn: |
-              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d.export_kwh || 0}));
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d.export_kwh || 0]);
         apex_config:
           chart:
             animations:
@@ -139,13 +150,19 @@ sections:
         header:
           show: true
         graph_span: 1d
+        span:
+          start: day
         series:
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?retailer=FlowPower&from={{ now().strftime('%Y-%m-%d') }}&to={{ now().strftime('%Y-%m-%d') }}&format=chart"
+          - entity: sensor.retailer_five_min_detail
             name: FlowPower
             type: area
-            data_fn: |
-              return (JSON.parse(body).intervals || []).map(d => ({x: new Date(d.datetime).getTime(), y: (d.impKwh * 12) || 0}));
+            data_generator: |
+              const raw = entity.attributes.chart_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
+              const key = Object.keys(data).find(k => k.startsWith('FlowPower_'));
+              if (!key) return [];
+              const dateStr = key.split('_').slice(1).join('_');
+              return (data[key] || []).map(i => [new Date(dateStr + 'T' + i.t).getTime(), (i.ik || 0) * 12]);
         apex_config:
           chart:
             animations:
@@ -162,13 +179,19 @@ sections:
         header:
           show: true
         graph_span: 1d
+        span:
+          start: day
         series:
-          - entity: url
-            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?retailer=FlowPower&from={{ now().strftime('%Y-%m-%d') }}&to={{ now().strftime('%Y-%m-%d') }}&format=chart"
+          - entity: sensor.retailer_five_min_detail
             name: AEMO Price
             type: area
-            data_fn: |
-              return (JSON.parse(body).intervals || []).map(d => ({x: new Date(d.datetime).getTime(), y: d.aemoPrice || 0}));
+            data_generator: |
+              const raw = entity.attributes.chart_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
+              const key = Object.keys(data).find(k => k.startsWith('FlowPower_'));
+              if (!key) return [];
+              const dateStr = key.split('_').slice(1).join('_');
+              return (data[key] || []).map(i => [new Date(dateStr + 'T' + i.t).getTime(), i.ap || 0]);
         apex_config:
           chart:
             animations:
