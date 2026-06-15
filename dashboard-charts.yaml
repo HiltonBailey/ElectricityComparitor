@@ -9,8 +9,8 @@ sections:
       - type: heading
         heading: Energy Retailer Charts
       - type: custom:apexcharts-card
-        title: Daily Cost Comparison
         header:
+          title: Daily Cost Comparison
           show: true
         graph_span: 14d
         series:
@@ -62,8 +62,8 @@ sections:
             title:
               text: Net Cost ($)
       - type: custom:apexcharts-card
-        title: Billing Month Cumulative
         header:
+          title: Billing Month Cumulative
           show: true
         graph_span: 31d
         series:
@@ -112,15 +112,15 @@ sections:
             title:
               text: Cumulative Net Cost ($)
       - type: custom:apexcharts-card
-        title: Daily Import / Export kWh
         header:
+          title: Daily Import / Export kWh
           show: true
+        stacked: true
         graph_span: 14d
         series:
           - entity: sensor.retailer_daily_summary
             name: Import
             type: column
-            stack: kWh
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -128,7 +128,6 @@ sections:
           - entity: sensor.retailer_daily_summary
             name: Export
             type: column
-            stack: kWh
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -146,8 +145,8 @@ sections:
             title:
               text: kWh
       - type: custom:apexcharts-card
-        title: 5-Min Import Profile
         header:
+          title: 5-Min Import Profile
           show: true
         graph_span: 1d
         span:
@@ -169,14 +168,12 @@ sections:
               enabled: false
           stroke:
             width: 1
-          fill:
-            opacity: 0.3
           yaxis:
             title:
               text: kW
       - type: custom:apexcharts-card
-        title: AEMO Wholesale Price
         header:
+          title: AEMO Wholesale Price
           show: true
         graph_span: 1d
         span:
