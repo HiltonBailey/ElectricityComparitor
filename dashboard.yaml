@@ -43,4 +43,179 @@ sections:
           <iframe src="http://192.168.50.9:1880/endpoint/api/5min-detail-page" style="width:100%;height:400px;border:none;border-radius:6px"></iframe>
         grid_options:
           columns: full
+  - type: grid
+    column_span: 4
+    cards:
+      - type: heading
+        heading: Energy Retailer Charts
+      - type: custom:apexcharts-card
+        title: Daily Cost Comparison
+        header:
+          show: true
+        graph_span: 14d
+        series:
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: FlowPower
+            type: column
+            data_fn: |
+              const data = JSON.parse(body).daily_data;
+              return data ? data.map(d => ({x: d.date, y: d['FlowPower'] || 0})) : [];
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Origin
+            type: column
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Origin Loop Max'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Globird
+            type: column
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Globird VPP'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: CovaU
+            type: column
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['CovaU SolarMax'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Amber
+            type: column
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Amber'] || 0}));
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          plotOptions:
+            bar:
+              columnWidth: 50%
+          dataLabels:
+            enabled: false
+          yaxis:
+            title:
+              text: Net Cost ($)
+      - type: custom:apexcharts-card
+        title: Billing Month Cumulative
+        header:
+          show: true
+        graph_span: 31d
+        series:
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: FlowPower
+            type: line
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['FlowPower_cum'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Origin
+            type: line
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Origin Loop Max_cum'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Globird
+            type: line
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Globird VPP_cum'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: CovaU
+            type: line
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['CovaU SolarMax_cum'] || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Amber
+            type: line
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d['Amber_cum'] || 0}));
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          stroke:
+            width: 2
+          yaxis:
+            title:
+              text: Cumulative Net Cost ($)
+      - type: custom:apexcharts-card
+        title: Daily Import / Export kWh
+        header:
+          show: true
+        graph_span: 14d
+        series:
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Import
+            type: column
+            stack: kWh
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d.import_kwh || 0}));
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?type=daily"
+            name: Export
+            type: column
+            stack: kWh
+            data_fn: |
+              return (JSON.parse(body).daily_data || []).map(d => ({x: d.date, y: d.export_kwh || 0}));
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          plotOptions:
+            bar:
+              columnWidth: 50%
+          dataLabels:
+            enabled: false
+          yaxis:
+            title:
+              text: kWh
+      - type: custom:apexcharts-card
+        title: 5-Min Import Profile
+        header:
+          show: true
+        graph_span: 1d
+        series:
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?retailer=FlowPower&from={{ now().strftime('%Y-%m-%d') }}&to={{ now().strftime('%Y-%m-%d') }}&format=chart"
+            name: FlowPower
+            type: area
+            data_fn: |
+              return (JSON.parse(body).intervals || []).map(d => ({x: new Date(d.datetime).getTime(), y: (d.impKwh * 12) || 0}));
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          stroke:
+            width: 1
+          fill:
+            opacity: 0.3
+          yaxis:
+            title:
+              text: kW
+      - type: custom:apexcharts-card
+        title: AEMO Wholesale Price
+        header:
+          show: true
+        graph_span: 1d
+        series:
+          - entity: url
+            url: "http://192.168.50.9:1880/endpoint/api/5min-detail?retailer=FlowPower&from={{ now().strftime('%Y-%m-%d') }}&to={{ now().strftime('%Y-%m-%d') }}&format=chart"
+            name: AEMO Price
+            type: area
+            data_fn: |
+              return (JSON.parse(body).intervals || []).map(d => ({x: new Date(d.datetime).getTime(), y: d.aemoPrice || 0}));
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          stroke:
+            width: 1
+          yaxis:
+            title:
+              text: $/kWh
 cards: []
