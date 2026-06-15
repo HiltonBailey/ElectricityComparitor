@@ -19,6 +19,14 @@ sections:
         grid_options:
           columns: full
       - type: heading
+        heading: Seasonal Report
+      - type: custom:html-card
+        title: Retailer Seasonal Report
+        content: |
+          [[ sensor.retailer_seasonal_report.attributes.html ]]
+        grid_options:
+          columns: full
+      - type: heading
         heading: Daily Energy Breakdown
       - type: custom:html-card
         title: Daily Cost Summary

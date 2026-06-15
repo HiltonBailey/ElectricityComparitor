@@ -57,6 +57,15 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Fixed `build_five_min_detail`** — replaced IIFE with direct variable build, same hoisting issue with arrow functions
 - **Both `daily_data` (179 days) and `chart_data` (4 retailers × 2 days) now populate** on HA sensors after deploying v1.9 with these fixes
 - **Dashboards re-saved** via HA WebSocket `lovelace/config/save` — both `testing` and `energy-retailer-charts` views have all cards
+- **CovaU SolarMax aligned to EME plan COV1053199MRE1** — fetched from `api.energymadeeasy.gov.au`:
+  - DSC: $1.30 → $1.1818 (118.18c/day)
+  - Peak rate: $0.6139 → $0.5581 (55.81c/kWh)
+  - Shoulder/off-peak rate: $0.2802 → $0.2547 (25.47c/kWh)
+  - Peak window: 17-21 (Weekend exemption removed — peak applies MON-SUN)
+  - Free import 11-14: $0/kWh with **24kWh/day cap** (was unlimited); excess charged at shoulder $0.2547
+  - Added **EV Off-Peak** TOU period: 00:00-05:59 at $0.15/kWh (new config columns `ev_s`, `ev_e`, `ev_pk`)
+  - FIT unchanged: 18c/kWh super peak 17-21, 5c/kWh all other times ✅
+- **Seasonal Report** — new HA sensor `sensor.retailer_seasonal_report` with Yearly/Monthly/Summer/Autumn/Winter/Spring totals per retailer; HTML table + JSON `data` attribute
 
 ### In Progress
 - (none)
@@ -73,10 +82,14 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Versioning: plain `VERSION` file read by deploy script, injected as `v{version}` into group name and sensor attributes
 - Charts use `data_generator` (not `entity: url`) for apexcharts-card v1.4.0 — data sourced from HA sensor JSON attributes (`daily_data`, `chart_data`)
 - Dashboard YAML split: `dashboard.yaml` = original "Energy Retailer Costs" view; `dashboard-charts.yaml` = "Energy Retailer Charts" view
+- Config extended with `ev_s`, `ev_e`, `ev_pk`, `off_limit` columns — 4th TOU period (EV Off-Peak) and free import daily cap, only populated for CovaU
+- Free import 24kWh/day cap tracked per day per retailer as `freeUsage`, reset daily; excess charged at shoulder rate
 
 ## Next Steps
-- Verify apexcharts render correctly in HA dashboard (refresh browser or re-navigate to `energy-retailer-charts` view)
-- Optional: add drop-down retailer selector for 5-min import profile and AEMO charts
+- Wait for next 5-min cycle to trigger; verify CovaU costs recalculate with new EME-aligned rates
+- Check 5-min detail report text to confirm EV Offpeak period label appears for CovaU 00:00-05:59 intervals
+- Verify seasonal report coloring fix (cheapest → green) and Best column shows on reload
+- Bump VERSION once all changes verified
 
 ## Critical Context
 - Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
@@ -91,9 +104,9 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - apexcharts-card v1.4.0 — no `entity: url`; all series use `data_generator` reading from entity attributes
 
 ## Relevant Files
-- `node_red_flow.json`: Complete upstream flow — 26 nodes + group
+- `node_red_flow.json`: Complete upstream flow — 28 nodes + group
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection
-- `VERSION`: Current version (v1.9)
+- `VERSION`: Current version (v1.9 — not bumped until EME changes verified)
 - `AGENTS.md`: This file — session continuity for opencode agents
