@@ -198,4 +198,43 @@ sections:
           yaxis:
             title:
               text: $/kWh
+      - type: custom:apexcharts-card
+        header:
+          title: Fixed Retailers Cumulative Cost
+          show: true
+        graph_span: 365d
+        series:
+          - entity: sensor.retailer_daily_summary
+            name: Origin Loop Max
+            type: line
+            color: "#2962FF"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
+            name: Globird VPP
+            type: line
+            color: "#D32F2F"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
+            name: CovaU SolarMax
+            type: line
+            color: "#FFB300"
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax_cum'] || 0]);
+        apex_config:
+          chart:
+            animations:
+              enabled: false
+          stroke:
+            width: 2
+          yaxis:
+            title:
+              text: Cumulative Net Cost ($)
 cards: []
