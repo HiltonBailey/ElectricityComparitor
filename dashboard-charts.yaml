@@ -282,6 +282,6 @@ sections:
             yaxis:
               - y: 0
                 strokeDashArray: 0
-                borderColor: "#2962FF"
+                borderColor: "#555"
                 borderWidth: 2
 cards: []
