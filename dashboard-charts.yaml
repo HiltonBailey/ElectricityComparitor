@@ -210,50 +210,65 @@ sections:
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower'] || 0]);
-            group_by:
-              func: sum
-              duration: 1mon
+              const monthly = {};
+              data.forEach(d => {
+                const m = d.date.substring(0, 7);
+                if (!monthly[m]) monthly[m] = 0;
+                monthly[m] += (d['FlowPower'] || 0);
+              });
+              return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Origin Loop Max
             type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max'] || 0]);
-            group_by:
-              func: sum
-              duration: 1mon
+              const monthly = {};
+              data.forEach(d => {
+                const m = d.date.substring(0, 7);
+                if (!monthly[m]) monthly[m] = 0;
+                monthly[m] += (d['Origin Loop Max'] || 0);
+              });
+              return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Globird VPP
             type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP'] || 0]);
-            group_by:
-              func: sum
-              duration: 1mon
+              const monthly = {};
+              data.forEach(d => {
+                const m = d.date.substring(0, 7);
+                if (!monthly[m]) monthly[m] = 0;
+                monthly[m] += (d['Globird VPP'] || 0);
+              });
+              return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: CovaU SolarMax
             type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax'] || 0]);
-            group_by:
-              func: sum
-              duration: 1mon
+              const monthly = {};
+              data.forEach(d => {
+                const m = d.date.substring(0, 7);
+                if (!monthly[m]) monthly[m] = 0;
+                monthly[m] += (d['CovaU SolarMax'] || 0);
+              });
+              return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Amber
             type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber'] || 0]);
-            group_by:
-              func: sum
-              duration: 1mon
+              const monthly = {};
+              data.forEach(d => {
+                const m = d.date.substring(0, 7);
+                if (!monthly[m]) monthly[m] = 0;
+                monthly[m] += (d['Amber'] || 0);
+              });
+              return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
         apex_config:
           chart:
             animations:
