@@ -200,52 +200,70 @@ sections:
               text: $/kWh
       - type: custom:apexcharts-card
         header:
-          title: All Retailers Cumulative Cost
+          title: All Retailers Monthly Cost
           show: true
         graph_span: 365d
         series:
           - entity: sensor.retailer_daily_summary
             name: FlowPower
-            type: line
+            type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower_cum'] || 0]);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower'] || 0]);
+            group_by:
+              func: sum
+              duration: 1mon
           - entity: sensor.retailer_daily_summary
             name: Origin Loop Max
-            type: line
+            type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max_cum'] || 0]);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Origin Loop Max'] || 0]);
+            group_by:
+              func: sum
+              duration: 1mon
           - entity: sensor.retailer_daily_summary
             name: Globird VPP
-            type: line
+            type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP_cum'] || 0]);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Globird VPP'] || 0]);
+            group_by:
+              func: sum
+              duration: 1mon
           - entity: sensor.retailer_daily_summary
             name: CovaU SolarMax
-            type: line
+            type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax_cum'] || 0]);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax'] || 0]);
+            group_by:
+              func: sum
+              duration: 1mon
           - entity: sensor.retailer_daily_summary
             name: Amber
-            type: line
+            type: column
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
-              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber_cum'] || 0]);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber'] || 0]);
+            group_by:
+              func: sum
+              duration: 1mon
         apex_config:
           chart:
             animations:
               enabled: false
-          stroke:
-            width: 2
+          plotOptions:
+            bar:
+              columnWidth: 50%
+          dataLabels:
+            enabled: false
           yaxis:
             title:
-              text: Cumulative Net Cost ($)
+              text: Monthly Net Cost ($)
 cards: []
