@@ -200,14 +200,20 @@ sections:
               text: $/kWh
       - type: custom:apexcharts-card
         header:
-          title: Fixed Retailers Cumulative Cost
+          title: All Retailers Cumulative Cost
           show: true
         graph_span: 365d
         series:
           - entity: sensor.retailer_daily_summary
+            name: FlowPower
+            type: line
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['FlowPower_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
             name: Origin Loop Max
             type: line
-            color: "#2962FF"
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -215,7 +221,6 @@ sections:
           - entity: sensor.retailer_daily_summary
             name: Globird VPP
             type: line
-            color: "#D32F2F"
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -223,11 +228,17 @@ sections:
           - entity: sensor.retailer_daily_summary
             name: CovaU SolarMax
             type: line
-            color: "#FFB300"
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
               return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['CovaU SolarMax_cum'] || 0]);
+          - entity: sensor.retailer_daily_summary
+            name: Amber
+            type: line
+            data_generator: |
+              const raw = entity.attributes.daily_data;
+              const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+              return data.map(d => [new Date(d.date + 'T00:00:00').getTime(), d['Amber_cum'] || 0]);
         apex_config:
           chart:
             animations:
