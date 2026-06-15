@@ -278,4 +278,10 @@ sections:
           yaxis:
             title:
               text: Monthly Net Cost ($)
+          annotations:
+            yaxis:
+              - y: 0
+                strokeDashArray: 0
+                borderColor: "#2962FF"
+                borderWidth: 2
 cards: []
