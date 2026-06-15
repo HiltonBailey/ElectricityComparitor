@@ -206,7 +206,7 @@ sections:
         series:
           - entity: sensor.retailer_daily_summary
             name: FlowPower
-            type: column
+            type: line
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -219,7 +219,7 @@ sections:
               return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Origin Loop Max
-            type: column
+            type: line
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -232,7 +232,7 @@ sections:
               return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Globird VPP
-            type: column
+            type: line
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -245,7 +245,7 @@ sections:
               return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: CovaU SolarMax
-            type: column
+            type: line
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -258,7 +258,7 @@ sections:
               return Object.keys(monthly).sort().map(m => [new Date(m + '-15T00:00:00').getTime(), Math.round(monthly[m] * 100) / 100]);
           - entity: sensor.retailer_daily_summary
             name: Amber
-            type: column
+            type: line
             data_generator: |
               const raw = entity.attributes.daily_data;
               const data = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
@@ -273,11 +273,8 @@ sections:
           chart:
             animations:
               enabled: false
-          plotOptions:
-            bar:
-              columnWidth: 50%
-          dataLabels:
-            enabled: false
+          stroke:
+            width: 2
           yaxis:
             title:
               text: Monthly Net Cost ($)
