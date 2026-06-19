@@ -7,7 +7,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Three pricing models: FlowPower (hybrid), Amber (variable), Fixed TOU (Origin/Globird/CovaU)
 - Script tags stripped by `custom:html-card` — `<iframe>` used instead for the 5-min interactive report
 - Node-RED `httpNodeRoot` = `/endpoint`; HTTP nodes served under `/endpoint/`
-- HA at http://192.168.50.9:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
+- HA at http://192.168.50.100:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
 - HA CSV source: `/share/file_notifications/5minelec.csv` (14 cols, cumulative energy columns)
 - Billing cycle: 4th of month to 3rd of next month
 - Deploy via `bash deploy.sh` — uses `PUT /flow/tab_energy_retailer_comparison` (does not touch other tabs)

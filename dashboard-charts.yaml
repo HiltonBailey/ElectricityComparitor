@@ -281,7 +281,7 @@ sections:
           annotations:
             yaxis:
               - y: 0
-                strokeDashArray: 0
+                strokeDashArray: 5
                 borderColor: "#555"
                 borderWidth: 2
 cards: []

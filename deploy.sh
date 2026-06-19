@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FLOW_FILE="${1:-$SCRIPT_DIR/node_red_flow.json}"
-NR_URL="${NR_URL:-http://192.168.50.9:1880}"
+NR_URL="${NR_URL:-http://192.168.50.100:1880}"
 NR_USER="${NR_USER:-stilgar}"
 NR_PASS="${NR_PASS:-Ha0118021669}"
 TAB_ID="tab_energy_retailer_comparison"

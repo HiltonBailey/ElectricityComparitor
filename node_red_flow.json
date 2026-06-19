@@ -277,7 +277,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Set HA URL + Token",
-    "func": "global.set('ha_url', 'http://192.168.50.9:8123');\nglobal.set('ha_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0NTQ1YjAwYWEwYTQ0YjRiYmZlN2FkMjIwMDlkMTgzZiIsImlhdCI6MTc4MTA3MjcwMCwiZXhwIjoyMDk2NDMyNzAwfQ.majW8v0wjDid-9rKMExUhG18xcYISsaijzxTaaYDq4U');\n// node.warn('HA credentials stored.');\nreturn null;",
+    "func": "global.set('ha_url', 'http://192.168.50.100:8123');\nglobal.set('ha_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0NTQ1YjAwYWEwYTQ0YjRiYmZlN2FkMjIwMDlkMTgzZiIsImlhdCI6MTc4MTA3MjcwMCwiZXhwIjoyMDk2NDMyNzAwfQ.majW8v0wjDid-9rKMExUhG18xcYISsaijzxTaaYDq4U');\n// node.warn('HA credentials stored.');\nreturn null;",
     "outputs": 0,
     "timeout": "",
     "noerr": 0,
