@@ -110,3 +110,9 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection
 - `VERSION`: Current version (v1.9 — not bumped until EME changes verified)
 - `AGENTS.md`: This file — session continuity for opencode agents
+- `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
+
+## Updating Without Breaking Other Tabs
+See `DEPLOY.md` for the complete guide. In summary:
+- **HA Dashboard**: Fetch full config via WebSocket `lovelace/config` (with `url_path: 'power-dashboard'`), replace only views matching paths `testing` and `energy-retailer-charts`, save via WebSocket `lovelace/config/save`. Never use REST endpoints — they replace the entire config.
+- **Node-RED**: Run `bash deploy.sh` — it extracts only `tab_energy_retailer_comparison` from `node_red_flow.json` and sends `PUT /flow/:tab_id` to the Node-RED admin API, leaving all other tabs untouched.
