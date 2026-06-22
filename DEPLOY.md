@@ -116,6 +116,13 @@ bash deploy.sh
 2. Ensure the tab ID remains `tab_energy_retailer_comparison`
 3. Run `bash deploy.sh`
 
+### Version Bumping
+
+When bumping `VERSION`, always **re-run `deploy.sh`** after editing
+the version file. The version is read at deploy time and injected into the
+group label and sensor attributes. Editing `VERSION` alone does not update
+Node-RED — the deploy script must be run to push the new version.
+
 Do **not** use `POST /flow` (import) or `PUT /flow` (replace all flows) —
 those would overwrite other tabs.
 
@@ -129,6 +136,7 @@ those would overwrite other tabs.
 | Updating dashboard by view index instead of path | Wrong view gets replaced if order changes | Match views by `path` field |
 | Running `curl -X POST http://node-red:1880/flow` | Imports entire flow, duplicating or replacing other tabs | Use `PUT /flow/:tab_id` via `deploy.sh` |
 | Editing `deploy.sh` to target a different tab ID | Wrong tab gets updated | Keep `TAB_ID=tab_energy_retailer_comparison` |
+| Bumping `VERSION` without re-running `deploy.sh` | Node-RED still shows old version | Always run `bash deploy.sh` after changing `VERSION` |
 
 ---
 
