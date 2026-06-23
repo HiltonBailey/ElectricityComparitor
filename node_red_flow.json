@@ -801,7 +801,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Save Config",
-    "func": "// Build CSV from posted form data\nvar body = msg.req.body || {};\nvar headers = (body.headers || '').split(',');\nvar rowCount = parseInt(body.rowCount) || 0;\n\nvar csvLines = [headers.join(',')];\nfor (var i = 1; i <= rowCount; i++) {\n    var row = [];\n    for (var j = 0; j < headers.length; j++) {\n        var hdr = headers[j].trim();\n        var val = body[hdr + '_' + i];\n        row.push(val !== undefined ? val.trim() : '');\n    }\n    csvLines.push(row.join(','));\n}\nvar csvContent = csvLines.join('\\n');\n\n// Store in flow for file-out node\nmsg.payload = csvContent;\nmsg.filename = '/share/retailer_config.csv';\nreturn msg;",
+    "func": "// Build CSV from posted form data\nvar body = msg.req.body || {};\nvar headers = (body.headers || '').split(',');\nvar rowCount = parseInt(body.rowCount) || 0;\n\nvar csvLines = [headers.join(',')];\nfor (var i = 1; i <= rowCount; i++) {\n    var row = [];\n    for (var j = 0; j < headers.length; j++) {\n        var hdr = headers[j].trim();\n        var val = body[hdr + '_' + i];\n        if (val === undefined || val.trim() === '') {\n            row.push(j === 0 ? '' : '0');\n        } else {\n            row.push(val.trim());\n        }\n    }\n    csvLines.push(row.join(','));\n}\nvar csvContent = csvLines.join('\\n');\n\n// Store in flow for file-out node\nmsg.payload = csvContent;\nmsg.filename = '/share/retailer_config.csv';\nreturn msg;",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
