@@ -116,3 +116,6 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 See `DEPLOY.md` for the complete guide. In summary:
 - **HA Dashboard**: Fetch full config via WebSocket `lovelace/config` (with `url_path: 'power-dashboard'`), replace only views matching paths `testing` and `energy-retailer-charts`, save via WebSocket `lovelace/config/save`. Never use REST endpoints — they replace the entire config.
 - **Node-RED**: Run `bash deploy.sh` — it extracts only `tab_energy_retailer_comparison` from `node_red_flow.json` and sends `PUT /flow/:tab_id` to the Node-RED admin API, leaving all other tabs untouched.
+
+## Retailer Config Editor
+A web-based editor for retailer rates and TOU periods is available at `http://192.168.50.100:1880/endpoint/api/retailer-config`. Changes are saved to `/share/retailer_config.csv` on HA and take effect on the next 5-min cycle. The editor is preferred over editing the template node directly — `deploy.sh` auto-seeds the file on first deploy.

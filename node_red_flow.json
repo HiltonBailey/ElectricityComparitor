@@ -68,7 +68,8 @@
     "wires": [
       [
         "retailer_config_template",
-        "read_csv_file"
+        "read_csv_file",
+        "read_retailer_config_1"
       ]
     ]
   },
@@ -659,5 +660,193 @@
     "wires": [
       []
     ]
+  },
+  {
+    "id": "read_retailer_config_1",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read Retailer Config",
+    "filename": "/share/retailer_config.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "none",
+    "allProps": false,
+    "x": 290,
+    "y": 180,
+    "wires": [
+      [
+        "fallback_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "fallback_config_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Fallback Config",
+    "func": "// If file has content, send to store_config.\n// If file missing (no payload), template already handled it.\nif (!msg.payload || typeof msg.payload !== 'string' || msg.payload.trim().length < 10) {\n    return null;\n}\n// Also skip if it's just the header line with no data rows\nvar lines = msg.payload.trim().split('\\n');\nif (lines.length < 2) { return null; }\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 180,
+    "wires": [
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "http_retailer_get_1",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET Retailer Config",
+    "url": "/api/retailer-config",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 860,
+    "wires": [
+      [
+        "serve_config_page_1"
+      ]
+    ]
+  },
+  {
+    "id": "serve_config_page_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Serve Config Page",
+    "func": "// Serve editable config page\nvar retailers = flow.get('retailers');\nvar csvContent = (typeof msg.payload === 'string' && msg.payload.length > 10) ? msg.payload : `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,nw,ev_s,ev_e,ev_pk,off_limit\nFlowPower,hybrid,1.3419,0,0,0,0,0,0,0.45,0,0,0,0,0,0,0,0,17.5,19.5,0.45,0.33998,0,0,0,0,0\nOrigin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,0,0,0,0,0,0,0,0,0\nGlobird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,0,0,0,0,0,0,0,0,0\nCovaU SolarMax,fixed_tou,1.1818,0,0,0.2547,0.5581,0.05,0.05,0.05,0.18,0,11,14,17,21,17,21,0,0,0,0,0,0,6,0.15,24\nAmber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0.05,0,0,0,0`;\nvar lines = csvContent.split('\\n');\nvar headers = lines[0].split(',');\n\n// Build HTML form\nvar html = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">';\nhtml += '<style>body{margin:12px;background:#111;color:#eee;font-family:monospace;font-size:12px}';\nhtml += 'h2{color:#4CAF50;margin:16px 0 8px}';\nhtml += 'table{width:100%;border-collapse:collapse;margin-bottom:20px}';\nhtml += 'th,td{padding:6px 8px;border:1px solid #333;text-align:left}';\nhtml += 'th{background:#222;color:#aaa;font-size:10px;white-space:nowrap}';\nhtml += 'td{background:#1a1a1a}';\nhtml += 'input[type=text]{width:100%;box-sizing:border-box;padding:4px 6px;background:#000;color:#eee;border:1px solid #444;border-radius:3px;font-family:monospace;font-size:11px}';\nhtml += 'input[type=text]:focus{outline:none;border-color:#4CAF50}';\nhtml += 'button{padding:10px 24px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-family:monospace}';\nhtml += 'button:hover{background:#45a049}';\nhtml += '.header{color:#888;font-size:10px;margin:4px 0 12px}';\nhtml += '.success{color:#4CAF50;padding:10px;background:#0a2a0a;border:1px solid #4CAF50;border-radius:4px;margin-bottom:12px;display:none}';\nhtml += '</style></head><body>';\nhtml += '<h2>Retailer Configuration</h2>';\nhtml += '<div class=\"header\">Edit retailer rates and TOU periods. Changes take effect on the next 5-min cycle.</div>';\nhtml += '<div id=\"success\" class=\"success\">\u2713 Saved successfully</div>';\nhtml += '<form id=\"configForm\">';\nhtml += '<table><thead><tr>';\nfor (var h = 0; h < headers.length; h++) {\n    html += '<th>' + headers[h].trim() + '</th>';\n}\nhtml += '</tr></thead><tbody>';\n\nfor (var i = 1; i < lines.length; i++) {\n    var row = lines[i].split(',');\n    if (row.length < headers.length) continue;\n    html += '<tr>';\n    for (var j = 0; j < headers.length; j++) {\n        var val = (row[j] || '').trim();\n        var hdr = headers[j].trim();\n        // First column (name) is read-only\n        if (j === 0) {\n            html += '<td style=\"color:#888\">' + val + '</td>';\n        } else {\n            html += '<td><input type=\"text\" name=\"' + hdr + '_' + i + '\" value=\"' + val + '\"></td>';\n        }\n    }\n    html += '</tr>';\n}\nhtml += '</tbody></table>';\nhtml += '<input type=\"hidden\" name=\"rowCount\" value=\"' + (lines.length - 1) + '\">';\nhtml += '<input type=\"hidden\" name=\"headers\" value=\"' + headers.join(',') + '\">';\nhtml += '<button type=\"submit\">Save Configuration</button>';\nhtml += '</form>';\nhtml += '<script>document.getElementById(\"configForm\").addEventListener(\"submit\", async function(e){e.preventDefault();var fd=new FormData(this);var params=new URLSearchParams(fd);var r=await fetch(\"/endpoint/api/retailer-config\",{method:\"POST\",headers:{\"Content-Type\":\"application/x-www-form-urlencoded\"},body:params.toString()});if(r.ok){document.getElementById(\"success\").style.display=\"block\";setTimeout(function(){document.getElementById(\"success\").style.display=\"none\"},3000)}else{alert(\"Save failed: \"+await r.text())}})</script>';\nhtml += '</body></html>';\nmsg.payload = html;\nmsg.statusCode = 200;\nmsg.headers = { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' };\nnode.send(msg);",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 860,
+    "wires": [
+      [
+        "http_config_response_1"
+      ]
+    ]
+  },
+  {
+    "id": "after_save_config_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Confirm Save",
+    "func": "// File was written. Now update flow context and confirm.\nvar csvContent = msg.payload;\nmsg._config_csv = csvContent;  // store for next node\n\n// Return success response\nvar response = {\n    payload: 'OK\\n',\n    statusCode: 200,\n    headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }\n};\nnode.send([response, msg]);",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 720,
+    "y": 900,
+    "wires": [
+      [],
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "http_config_response_1",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response (Config)",
+    "x": 560,
+    "y": 860,
+    "wires": [
+      [
+        "http_retailer_post_1"
+      ]
+    ]
+  },
+  {
+    "id": "http_retailer_post_1",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Retailer Config",
+    "url": "/api/retailer-config",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 380,
+    "y": 900,
+    "wires": [
+      [
+        "save_config_handler_1"
+      ]
+    ]
+  },
+  {
+    "id": "save_config_handler_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Save Config",
+    "func": "// Build CSV from posted form data\nvar body = msg.req.body || {};\nvar headers = (body.headers || '').split(',');\nvar rowCount = parseInt(body.rowCount) || 0;\n\nvar csvLines = [headers.join(',')];\nfor (var i = 1; i <= rowCount; i++) {\n    var row = [];\n    for (var j = 0; j < headers.length; j++) {\n        var hdr = headers[j].trim();\n        var val = body[hdr + '_' + i];\n        row.push(val !== undefined ? val.trim() : '');\n    }\n    csvLines.push(row.join(','));\n}\nvar csvContent = csvLines.join('\\n');\n\n// Store in flow for file-out node\nmsg.payload = csvContent;\nmsg.filename = '/share/retailer_config.csv';\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 900,
+    "wires": [
+      [
+        "write_retailer_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "write_retailer_config_1",
+    "type": "file",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Write Config File",
+    "filename": "/share/retailer_config.csv",
+    "filenameType": "str",
+    "appendNewline": true,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 560,
+    "y": 900,
+    "wires": [
+      [
+        "http_config_post_response_1"
+      ],
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "http_config_post_response_1",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response (Save)",
+    "x": 900,
+    "y": 900,
+    "wires": []
   }
 ]

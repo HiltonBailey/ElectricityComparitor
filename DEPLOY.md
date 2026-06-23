@@ -149,3 +149,30 @@ After updating:
 - [ ] HA: Energy Retailer Charts view shows apexcharts cards
 - [ ] NR: Only `tab_energy_retailer_comparison` tab updated (check Node-RED editor)
 - [ ] NR: Sensors updating on next 5-min cycle
+
+---
+
+## Retailer Config Editor
+
+A web-based editor for retailer rates and TOU periods is available at:
+
+**http://192.168.50.100:1880/endpoint/api/retailer-config**
+
+(or view it in an iframe on the HA dashboard)
+
+The editor presents a table with one row per retailer and editable fields
+for every configurable parameter (DSC, import/export rates, TOU windows,
+EV off-peak, free import cap, etc.). Changes are saved to
+`/share/retailer_config.csv` on the HA filesystem and take effect on the
+next 5-min cycle.
+
+The config file is loaded at startup and on every 5-min inject. If the file
+does not exist, the hardcoded defaults from the template node are used as
+fallback.
+
+### Updating the Config File Path in Deploy
+
+`deploy.sh` now POSTs the initial/default config to the editor endpoint
+after deploying the flow, ensuring the config file exists on first run.
+If you add or remove retailers, update both the template node's CSV and the
+`deploy.sh` seed section.
