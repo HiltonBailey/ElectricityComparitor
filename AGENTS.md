@@ -97,7 +97,8 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `expOutside45c` tracked as positive in 5-min detail, then subtracted for adjImport/adjExport (matches daily calc which tracks as negative and adds)
 - Node-RED admin API accessible at port 1880 with nginx basic auth (`stilgar` / `Ha0118021669`) — no Bearer token needed for admin API
 - Token: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU` (HA long-lived access token)
-- Dashboard path `testing` for Energy Retailer Costs; `energy-retailer-charts` for Energy Retailer Charts
+- Dashboard path `testing` for Energy Retailer Costs; `energy-retailer-charts` for Energy Retailer Charts; `energy-retailer-config` for Energy Retailer Configuration
+- **Energy Retailer Dashboard**: separate dashboard at `energy-retailer-dashboard` with 3 views (Costs, Charts, Config)
 - AEMO price available as `row[11]` in CSV parsing loops; network cost from `getNetworkCost(dt)` function
 - `daily_data` format: `[{"date":"2026-06-01","FlowPower":1.23,"FlowPower_cum":1.23,"import_kwh":8.5,"export_kwh":3.2,"cheapest":"FlowPower",...}]`
 - `chart_data` format: `{"FlowPower_2026-06-12":[{"t":"00:00","ik":0.123,"ap":45.23,"nw":0.0515},...],...}`
