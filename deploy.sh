@@ -73,15 +73,17 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         --data-urlencode "rowCount=5" \
-        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,ev_s,ev_e,ev_pk,off_limit" \
+        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,ev_s,ev_e,ev_pk,off_limit" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
         --data-urlencode "dsc_1=1.3419" \
+        --data-urlencode "off_pk_1=0.33998" \
+        --data-urlencode "sh_pk_1=0.33998" \
+        --data-urlencode "pk_pk_1=0.33998" \
         --data-urlencode "sp_fit_1=0.45" \
         --data-urlencode "exp_s_1=17.5" \
         --data-urlencode "exp_e_1=19.5" \
         --data-urlencode "exp_rate_1=0.45" \
-        --data-urlencode "base_1=0.33998" \
         --data-urlencode "name_2=Origin Loop Max" \
         --data-urlencode "model_2=fixed_tou" \
         --data-urlencode "dsc_2=1.2567" \
