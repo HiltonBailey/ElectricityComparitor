@@ -81,6 +81,8 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "sh_pk_1=0.33998" \
         --data-urlencode "pk_pk_1=0.33998" \
         --data-urlencode "sp_fit_1=0.45" \
+        --data-urlencode "sp_s_1=17.5" \
+        --data-urlencode "sp_e_1=19.5" \
         --data-urlencode "exp_s_1=17.5" \
         --data-urlencode "exp_e_1=19.5" \
         --data-urlencode "exp_rate_1=0.45" \
