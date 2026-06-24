@@ -73,7 +73,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         --data-urlencode "rowCount=5" \
-        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,nw,ev_s,ev_e,ev_pk,off_limit" \
+        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,exp_s,exp_e,exp_rate,base,ev_s,ev_e,ev_pk,off_limit" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
         --data-urlencode "dsc_1=1.3419" \
@@ -127,7 +127,6 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "dsc_5=1.76" \
         --data-urlencode "sub_5=25" \
         --data-urlencode "exp_rate_5=1" \
-        --data-urlencode "nw_5=0.05" \
         -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else
