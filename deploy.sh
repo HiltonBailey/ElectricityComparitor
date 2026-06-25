@@ -73,7 +73,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         --data-urlencode "rowCount=5" \
-        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit" \
+        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
         --data-urlencode "dsc_1=1.3419" \
@@ -92,6 +92,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "sp_fit_s_1=17.5" \
         --data-urlencode "sp_fit_e_1=19.5" \
         --data-urlencode "fixed_export_1=18" \
+        --data-urlencode "billing_day_1=4" \
         --data-urlencode "name_2=Origin Loop Max" \
         --data-urlencode "model_2=fixed_tou" \
         --data-urlencode "dsc_2=1.2567" \
@@ -102,6 +103,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "pk_fit_2=0.22" \
         --data-urlencode "pk_s_2=17" \
         --data-urlencode "pk_e_2=21" \
+        --data-urlencode "billing_day_2=4" \
         --data-urlencode "name_3=Globird VPP" \
         --data-urlencode "model_3=fixed_tou" \
         --data-urlencode "dsc_3=1.32" \
@@ -116,6 +118,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "pk_e_3=23" \
         --data-urlencode "sp_s_3=18" \
         --data-urlencode "sp_e_3=21" \
+        --data-urlencode "billing_day_3=4" \
         --data-urlencode "name_4=CovaU SolarMax" \
         --data-urlencode "model_4=fixed_tou" \
         --data-urlencode "dsc_4=1.1818" \
@@ -132,11 +135,13 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "ev_e_4=6" \
         --data-urlencode "ev_pk_4=0.15" \
         --data-urlencode "off_limit_4=24" \
+        --data-urlencode "billing_day_4=4" \
         --data-urlencode "name_5=Amber" \
         --data-urlencode "model_5=variable" \
         --data-urlencode "dsc_5=1.76" \
         --data-urlencode "sub_5=25" \
         --data-urlencode "exp_rate_5=1" \
+        --data-urlencode "billing_day_5=4" \
         -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else

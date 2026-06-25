@@ -9,7 +9,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Node-RED `httpNodeRoot` = `/endpoint`; HTTP nodes served under `/endpoint/`
 - HA at http://192.168.50.100:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
 - HA CSV source: `/share/file_notifications/5minelec.csv` (14 cols, cumulative energy columns)
-- Billing cycle: 4th of month to 3rd of next month
+- Billing cycle: configurable via `billing_day` column in retailer_config.csv (default 4, 4th→3rd)
 - Deploy via `bash deploy.sh` — uses `PUT /flow/tab_energy_retailer_comparison` (does not touch other tabs)
 - Node-RED v5.0.0, HA v2026.6.1, apexcharts-card v1.4.0 (no `entity: url` support — uses `data_generator`)
 - Dashboard in YAML mode (file-based)
@@ -66,6 +66,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **TOU period label: EV Offpeak → Off** — all import rates for TOU retailers show Off/Shoulder/Peak only
 - **Fixed NaN from division by zero** — CovaU off_limit logic: guarded `totalImport > 0` before dividing
 - **5-min detail / daily detail rounding alignment** — TOTAL row accumulates from raw unrounded values instead of summing rounded intervals; totals now match daily detail report
+- **Billing day configurable** — `billing_day` CSV column (32nd field, default 4) replaces hardcoded `4`; editable via config editor; propagated via `flow.get('billingDay')` to all billing logic (calculate_costs, daily summary, daily detail)
 
 ### In Progress
 - (none)
@@ -102,14 +103,14 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `daily_data` format: `[{"date":"2026-06-01","FlowPower":1.23,"FlowPower_cum":1.23,"import_kwh":8.5,"export_kwh":3.2,"cheapest":"FlowPower",...}]`
 - `chart_data` format: `{"FlowPower_2026-06-12":[{"t":"00:00","ik":0.123,"ap":45.23,"nw":0.0515},...],...}`
 - apexcharts-card v1.4.0 — no `entity: url`; all series use `data_generator` reading from entity attributes
-- CSV header: 31 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit`
+- CSV header: 32 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day`
 
 ## Relevant Files
 - `node_red_flow.json`: Complete flow — 40+ nodes + group + config editor endpoints
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.4)
+- `VERSION`: Current version (v2.5)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
