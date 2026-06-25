@@ -109,7 +109,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.3)
+- `VERSION`: Current version (v2.4)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
