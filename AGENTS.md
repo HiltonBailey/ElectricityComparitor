@@ -18,6 +18,8 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 ## Progress
 
 ### Done
+- **PEA in Monthly Cost Summary** — per-day PEA stored in dailySummary; monthly report shows `[PEA X.XXXX]` next to FlowPower cost, using the PEA from that billing period (not a single global value)
+- **PEA per billing period** — calculate_costs now computes PEA for each billing period (4th to 3rd), stores in `billingPea` object; dailySummary uses `billingPea[day.substring(0,7)]` to get correct PEA per month; Total row shows average PEA across all months
 - Full Node-RED flow generating 7+ HA sensors via REST API, daily summary/detail HTML reports, and 5-min detail for all fixed_tou + hybrid retailers
 - Export rate logic updated for all fixed_tou retailers: priority = super peak > peak > off-peak > shoulder (default)
 - Super peak daily export limit via `sp_limit` config column; Globird capped at 15 kWh/day at $0.15, excess falls back to peak $0.05
