@@ -67,6 +67,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Fixed NaN from division by zero** — CovaU off_limit logic: guarded `totalImport > 0` before dividing
 - **5-min detail / daily detail rounding alignment** — TOTAL row accumulates from raw unrounded values instead of summing rounded intervals; totals now match daily detail report
 - **Billing day configurable** — `billing_day` CSV column (32nd field, default 4) replaces hardcoded `4`; editable via config editor; propagated via `flow.get('billingDay')` to all billing logic (calculate_costs, daily summary, daily detail)
+- **Fixed config editor save** — form submit now uses `fetch` POST instead of default GET; GET handler builds CSV from `flow.get('retailers')` so the editor shows the actual saved config
 
 ### In Progress
 - (none)
@@ -110,7 +111,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.5)
+- `VERSION`: Current version (v2.6)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
