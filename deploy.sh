@@ -69,7 +69,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
     # Seed retailer config file (idempotent — overwrites with same defaults)
     echo "Seeding retailer config file..."
     SEED_CODE=$(curl -s -m 10 -o /dev/null -w "%{http_code}" \
-        -X POST "$NR_URL/endpoint/api/retailer-config" \
+        -X POST "$NR_URL/endpoint/api/retailer-config/save" \
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         --data-urlencode "rowCount=5" \

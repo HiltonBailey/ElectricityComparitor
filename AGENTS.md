@@ -92,6 +92,16 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 ## Next Steps
 - (none — all items verified and complete)
 
+### Fixed
+- **Inline `//` comments eating all code after them** — entire generated JS was on one line (no newlines), so `// params not needed` commented out the `for` loop, and `// Standard form POST` commented out `});})();function revertConfig()` incl. all closing braces. Changed to `/* */` block comments. Added favicon `<link>` and `</body></html>` closing tags to fix browser JS errors.
+- **File-in node Buffer rejected by fallback_config_1** — `read_retailer_config_1` with `encoding: none` returns a Node.js Buffer, but `fallback_config_1`'s `typeof msg.payload !== 'string'` check silently discarded it → `store_config` never called → `flow.get('retailers')` always undefined → every 5-min cycle crashed on `flowPower.fixed_export`. Added Buffer→string conversion at start of `fallback_config_1`.
+- **Config editor GET timeout** — root cause was `\n` escape sequences in JavaScript string literals getting double-escaped by Python json.dump when rewriting the flow JSON; replaced all `'\n'` with `String.fromCharCode(10)` (aliased as `NL`) to avoid JSON encoding issues; function code now stored in `config_func_code.js` and embedded via Python file read + json.dump
+- **Config editor URL changed** — GET handler moved to `/api/retailer-editor` to avoid Node-RED routing corruption at the old `/api/retailer-config` URL (which persisted across deploys); POST handler moved to `/api/retailer-config/save`; editor accessible at `http://192.168.50.100:1880/endpoint/api/retailer-editor`
+- **Config editor save not persisting** — `write_retailer_config_1` file node had 2 outputs configured (`wires: [[http_response], [store_config]]`) but standard Node-RED `file` node has only 1 working output; `store_config` on output 2 never received the message, so `flow.set('retailers', ...)` was never called after save; fixed by wiring both `http_config_post_response_1` and `store_config` to output 0
+- **Template node overwriting file config every 5 min** — `retailer_config_template` was wired directly to `store_config` (bypassing `fallback_config_1`) and triggered by the 5-min inject, overwriting file values with defaults before the file-in node could read the actual CSV; fixed by removing template from inject wires and adding a one-shot startup inject
+- **Template/file race condition** — both template and file-in competed to set `flow.get('retailers')` every cycle; fixed by routing both through `fallback_config_1` which tracks a `_fromFile` flag — template data is only passed on first boot when no retailers exist yet
+- **Revert button broken** — `localStorage.removeItem("retailerConfigBackup")` ran on every successful save, deleting the revert point; fixed by saving backup on first page load (IIFE) and only deleting on successful revert; the save handler no longer touches the backup at all
+
 ## Critical Context
 - Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
 - Flow variable `fiveMinDetail` stored by `calculate_costs`, read by both HTTP handlers
@@ -121,4 +131,4 @@ See `DEPLOY.md` for the complete guide. In summary:
 - **Node-RED**: Run `bash deploy.sh` — it extracts only `tab_energy_retailer_comparison` from `node_red_flow.json` and sends `PUT /flow/:tab_id` to the Node-RED admin API, leaving all other tabs untouched.
 
 ## Retailer Config Editor
-A web-based editor for retailer rates and TOU periods is available at `http://192.168.50.100:1880/endpoint/api/retailer-config`. Changes are saved to `/share/retailer_config.csv` on HA and take effect on the next 5-min cycle. The editor is preferred over editing the template node directly — `deploy.sh` auto-seeds the file on first deploy.
+A web-based editor for retailer rates and TOU periods is available at `http://192.168.50.100:1880/endpoint/api/retailer-editor`. Changes are saved to `/share/retailer_config.csv` on HA and take effect on the next 5-min cycle. The editor is preferred over editing the template node directly — `deploy.sh` auto-seeds the file on first deploy.
