@@ -1,0 +1,27 @@
+[
+  {
+    "content": "Update HA gap logic for stale NEW CSV",
+    "active_form": "Updating HA gap logic for stale NEW CSV",
+    "status": "completed"
+  },
+  {
+    "content": "Wire HA-filled CSV to persist",
+    "active_form": "Wiring HA-filled CSV to persist",
+    "status": "completed"
+  },
+  {
+    "content": "Validate flow JSON and deploy",
+    "active_form": "Validating flow JSON and deploying",
+    "status": "completed"
+  },
+  {
+    "content": "Trigger immediate HA backfill",
+    "active_form": "Triggering immediate HA backfill",
+    "status": "completed"
+  },
+  {
+    "content": "Summarize deployment result",
+    "active_form": "Summarizing deployment result",
+    "status": "completed"
+  }
+]

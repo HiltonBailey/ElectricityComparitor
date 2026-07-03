@@ -14,60 +14,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Node-RED v5.0.0, HA v2026.6.1, apexcharts-card v1.4.0 (no `entity: url` support — uses `data_generator`)
 - Dashboard in YAML mode (file-based)
 - Retailer config editor at `http://192.168.50.100:1880/endpoint/api/retailer-config` — stores to `/share/retailer_config.csv`
+- **JSON escaping rule**: Never use `'\n'` inside function node code for split/join/replace — JSON interprets `\n` as a literal newline, breaking JS string literals across lines. Always use `String.fromCharCode(10)` instead (e.g. `split(String.fromCharCode(10))`). This applies to ALL new or amended function node code. Existing nodes using `\\n` (double-escaped) in the JSON file are fine, but `String.fromCharCode(10)` is the preferred pattern as it is immune to JSON re-encoding corruption.
 
 ## Progress
 
 ### Done
-- **PEA in Monthly Cost Summary** — per-day PEA stored in dailySummary; monthly report shows `[PEA X.XXXX]` next to FlowPower cost, using the PEA from that billing period (not a single global value)
-- **PEA per billing period** — calculate_costs now computes PEA for each billing period (4th to 3rd), stores in `billingPea` object; dailySummary uses `billingPea[day.substring(0,7)]` to get correct PEA per month; Total row shows average PEA across all months
-- Full Node-RED flow generating 7+ HA sensors via REST API, daily summary/detail HTML reports, and 5-min detail for all fixed_tou + hybrid retailers
-- Export rate logic updated for all fixed_tou retailers: priority = super peak > peak > off-peak > shoulder (default)
-- Super peak daily export limit via `sp_limit` config column; Globird capped at 15 kWh/day at $0.15, excess falls back to peak $0.05
-- FlowPower (hybrid) added to 5-min detail with adjImport/adjExport logic matching daily summary
-- 5-min detail TOTAL row shows Import $, Export $, DSC, Rebate, Net $ values
-- Sticky headers fixed: removed `overflow:hidden` from day-sections and nested overflow wrappers, single report div scroll context
-- Debug nodes removed, `node.warn()` calls commented out in all function nodes
-- Reports sorted by date descending (latest first): Daily Summary, Daily Detail, both 5-min detail endpoints
-- Daily Detail date format changed from MM-DD to DD-MM
-- All nodes grouped under "Energy Retailer Comparison" group node
-- Stale sensor auto-cleanup: tracks previous retailer sensor IDs in flow, sends DELETE to HA when retailers removed
-- GitHub repo: https://github.com/HiltonBailey/ElectricityComparitor
-- Data stored in `flow.set('fiveMinDetail', ...)` instead of HA sensor attribute (avoids ~5-6MB sensor burden)
-- Dashboard YAML simplified: 5-min card via `<iframe>` using `custom:html-card` at 400px height
-- CORS handling for HTTP endpoints
-- Fixed duplicate kWh accumulation — now 1x per interval; fixes TOTAL Imp/Exp kWh values
-- Monthly Cost Summary report — HA sensor `sensor.retailer_monthly_summary`, groups dailySummary by month, shows season column
-- Daily Detail larger font (13px) and sticky first column — Date column freezes when scrolling horizontally
-- DSC/Net column font fixed — all sub-header and body cells changed from 9px to 11px
-- Billing filter removed from dailyData loop — monthly summary uses ALL CSV data from start of file
-- BP (billing month) column added to both Daily Summary and Daily Detail reports
-- Dashboard saved to HA via WebSocket API (`lovelace/config/save` with monthly card)
-- **AEMO price and network cost columns** added to 5-min detail — `csvByDate` stores `aemoPrice` (from `row[11]`) and `nwCost` (from `getNetworkCost`)
-- **Deploy via `PUT /flow/:id`** — `deploy.sh` updates only `tab_energy_retailer_comparison` tab; no longer touches other flows
-- **Versioning via `VERSION` file** — injected at deploy time into group label and sensor attributes; `##GIT_VERSION##` placeholders replaced dynamically
-- **5 apexcharts-card visualizations** in `dashboard-charts.yaml` (view `energy-retailer-charts`)
-- **`daily_data` JSON attribute** on `sensor.retailer_daily_summary` — per-day net cost per retailer, cumulative cost, import/export kWh
-- **`chart_data` JSON attribute** on `sensor.retailer_five_min_detail` — last 2 days of 5-min intervals per retailer
-- **Charts fixed for v1.4.0 compat**: `title` moved to `header.title`, `stack` replaced with `stacked: true`
-- **Fixed `billingMonth` hoisting bug** — moved to top-level scope
-- **Fixed `build_five_min_detail`** — replaced IIFE with direct variable build, same hoisting issue
-- **CovaU SolarMax aligned to EME plan COV1053199MRE1**:
-  - DSC: $1.1818, Peak: $0.5581, Shoulder/Off-peak: $0.2547, Peak window: 17-21 MON-SUN
-  - Free import 11-14: $0/kWh with 24kWh/day cap; excess at shoulder rate
-  - EV Off-Peak: 00:00-05:59 at $0.15/kWh (config columns `ev_s`, `ev_e`, `ev_pk`)
-  - FIT: 18c/kWh super peak 17-21, 5c/kWh all other times
-- **Seasonal Report** — HA sensor `sensor.retailer_seasonal_report` with Yearly/Monthly/Summer/Autumn/Winter/Spring totals per retailer; cheapest → green, Best column
-- **Energy Retailer Dashboard** at `energy-retailer-dashboard` with 3 views: Costs (path `testing`), Charts (path `energy-retailer-charts`), Config (path `energy-retailer-config`)
-- **Retailer config editor** — web-based editor with editable table, dropdown model select, hover tooltips, delete checkboxes, localStorage revert backup
-- **Config editor field widths** — min-width 60px on all cells, horizontal scroll wrapper for 31-column table
-- **Per-period FIT windows** — each TOU period (off/sh/pk/sp) has configurable FIT start/end (`off_fit_s`, `off_fit_e`, `sh_fit_s`, `sh_fit_e`, `pk_fit_s`, `pk_fit_e`, `sp_fit_s`, `sp_fit_e`)
-- **Fixed config editor crash** — missing comma in helpText object + undefined `off_s`/`off_e`/`off_pk` variables in save handler
-- **Import $ and Export $ on 5-min detail TOTAL line** — summary shows `Import $: $X.XX | Export $: $X.XX | DSC: $X.XX | Rebate: $X.XX | Net: $X.XX`
-- **TOU period label: EV Offpeak → Off** — all import rates for TOU retailers show Off/Shoulder/Peak only
-- **Fixed NaN from division by zero** — CovaU off_limit logic: guarded `totalImport > 0` before dividing
-- **5-min detail / daily detail rounding alignment** — TOTAL row accumulates from raw unrounded values instead of summing rounded intervals; totals now match daily detail report
-- **Billing day configurable** — `billing_day` CSV column (32nd field, default 4) replaces hardcoded `4`; editable via config editor; propagated via `flow.get('billingDay')` to all billing logic (calculate_costs, daily summary, daily detail)
-- **Fixed config editor save** — form submit now uses `fetch` POST instead of default GET; GET handler builds CSV from `flow.get('retailers')` so the editor shows the actual saved config
 
 ### In Progress
 - (none)
@@ -88,19 +39,12 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Free import 24kWh/day cap tracked per day per retailer as `freeUsage`, reset daily; excess charged at shoulder rate
 - Per-period FIT windows allow different FIT windows from TOU windows for each period
 - Retailer config stored in `/share/retailer_config.csv`; flow reads on each 5-min cycle; template node as fallback
+- **HA history gap filling**: queries `sensor.energy_import_meter_offpeak/shoulder/peak` and `sensor.energy_export_meter_offpeak` at hour boundaries within gaps; uses real cumulative values as interpolation anchors; falls back to linear interpolation when HA data unavailable; process_ha_and_fill collects 4 HTTP responses via flow variables before processing
 
 ## Next Steps
 - (none — all items verified and complete)
 
 ### Fixed
-- **Inline `//` comments eating all code after them** — entire generated JS was on one line (no newlines), so `// params not needed` commented out the `for` loop, and `// Standard form POST` commented out `});})();function revertConfig()` incl. all closing braces. Changed to `/* */` block comments. Added favicon `<link>` and `</body></html>` closing tags to fix browser JS errors.
-- **File-in node Buffer rejected by fallback_config_1** — `read_retailer_config_1` with `encoding: none` returns a Node.js Buffer, but `fallback_config_1`'s `typeof msg.payload !== 'string'` check silently discarded it → `store_config` never called → `flow.get('retailers')` always undefined → every 5-min cycle crashed on `flowPower.fixed_export`. Added Buffer→string conversion at start of `fallback_config_1`.
-- **Config editor GET timeout** — root cause was `\n` escape sequences in JavaScript string literals getting double-escaped by Python json.dump when rewriting the flow JSON; replaced all `'\n'` with `String.fromCharCode(10)` (aliased as `NL`) to avoid JSON encoding issues; function code now stored in `config_func_code.js` and embedded via Python file read + json.dump
-- **Config editor URL changed** — GET handler moved to `/api/retailer-editor` to avoid Node-RED routing corruption at the old `/api/retailer-config` URL (which persisted across deploys); POST handler moved to `/api/retailer-config/save`; editor accessible at `http://192.168.50.100:1880/endpoint/api/retailer-editor`
-- **Config editor save not persisting** — `write_retailer_config_1` file node had 2 outputs configured (`wires: [[http_response], [store_config]]`) but standard Node-RED `file` node has only 1 working output; `store_config` on output 2 never received the message, so `flow.set('retailers', ...)` was never called after save; fixed by wiring both `http_config_post_response_1` and `store_config` to output 0
-- **Template node overwriting file config every 5 min** — `retailer_config_template` was wired directly to `store_config` (bypassing `fallback_config_1`) and triggered by the 5-min inject, overwriting file values with defaults before the file-in node could read the actual CSV; fixed by removing template from inject wires and adding a one-shot startup inject
-- **Template/file race condition** — both template and file-in competed to set `flow.get('retailers')` every cycle; fixed by routing both through `fallback_config_1` which tracks a `_fromFile` flag — template data is only passed on first boot when no retailers exist yet
-- **Revert button broken** — `localStorage.removeItem("retailerConfigBackup")` ran on every successful save, deleting the revert point; fixed by saving backup on first page load (IIFE) and only deleting on successful revert; the save handler no longer touches the backup at all
 
 ## Critical Context
 - Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
@@ -117,11 +61,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - CSV header: 32 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day`
 
 ## Relevant Files
-- `node_red_flow.json`: Complete flow — 40+ nodes + group + config editor endpoints
+- `node_red_flow.json`: Complete flow — 55 nodes + group + config editor endpoints
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.6)
+- `VERSION`: Current version (v2.11)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
