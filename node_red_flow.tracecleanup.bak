@@ -1,0 +1,1492 @@
+[
+  {
+    "id": "tab_energy_retailer_comparison",
+    "type": "tab",
+    "label": "EnergyRetailerComparison",
+    "disabled": false,
+    "info": "Dynamic multi-retailer electricity cost comparison."
+  },
+  {
+    "id": "group_energy_retailer_comparison",
+    "type": "group",
+    "z": "tab_energy_retailer_comparison",
+    "name": "Energy Retailer Comparison (last changed: 14-06-26 15:01)",
+    "style": {
+      "stroke": "#1a1a1a",
+      "fill": "#1a1a1a",
+      "fill-opacity": "0.14",
+      "label": true,
+      "color": "#000000"
+    },
+    "nodes": [
+      "inject_trigger",
+      "retailer_config_template",
+      "store_config",
+      "read_csv_file",
+      "calculate_costs",
+      "build_sensor_messages",
+      "build_daily_summary",
+      "ha_rest_api_daily",
+      "ha_rest_api",
+      "store_ha_credentials",
+      "inject_init",
+      "build_daily_detail",
+      "ha_rest_api_detail",
+      "build_five_min_detail",
+      "ha_rest_api_five_min_detail",
+      "http_in_01",
+      "http_handler",
+      "http_response",
+      "http_in_page",
+      "http_page_handler",
+      "http_response_page",
+      "ha_rest_api_delete",
+      "build_monthly_summary",
+      "ha_rest_api_monthly",
+      "build_seasonal_report",
+      "ha_rest_api_seasonal",
+      "save_redirect_handler",
+      "detect_gaps_for_ha",
+      "prepare_ha_queries",
+      "ha_http_offpeak",
+      "ha_http_shoulder",
+      "ha_http_peak",
+      "ha_http_export",
+      "process_ha_and_fill",
+      "manual_inject_fix",
+      "inject_copy_csv",
+      "read_original_for_copy",
+      "write_new_csv",
+      "copy_done_resp",
+      "http_copy_csv_endpoint",
+      "http_compare_csv_endpoint",
+      "compare_csv_read_orig",
+      "compare_csv_store_orig",
+      "compare_csv_read_new",
+      "compare_csv_func",
+      "compare_csv_resp"
+    ],
+    "x": 24,
+    "y": 99,
+    "w": 902,
+    "h": 780
+  },
+  {
+    "id": "inject_trigger",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Every 5 minutes",
+    "props": [],
+    "repeat": "300",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "10",
+    "topic": "",
+    "x": 170,
+    "y": 240,
+    "wires": [
+      [
+        "read_retailer_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "retailer_config_template",
+    "type": "template",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "RETAILER CONFIG - Edit Here",
+    "field": "payload",
+    "fieldType": "msg",
+    "format": "handlebars",
+    "syntax": "mustache",
+    "template": "name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day\nFlowPower,hybrid,1.3419,0,0.33998,0.33998,0.33998,0,0,0,0.45,0,0,0,0,0,17.5,19.5,17.5,19.5,17.5,19.5,17.5,19.5,17.5,19.5,18,0,0,0,0,4\nOrigin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,17,21,17,21,17,21,0,0,0,0,0,0,0,4\nGlobird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,16,23,16,23,16,23,18,21,0,0,0,0,0,4\nCovaU SolarMax,fixed_tou,1.1818,0,0,0.2547,0.5581,0.05,0.05,0.05,0.18,0,11,14,17,21,17,21,17,21,17,21,17,21,17,21,0,0,6,0.15,24,4\nAmber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.05,0,0,0,0,4",
+    "x": 290,
+    "y": 140,
+    "wires": [
+      [
+        "fallback_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "store_config",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Store Config",
+    "func": "const lines = msg.payload.split(String.fromCharCode(10));\nconst headers = lines[0].split(',');\nconst retailers = [];\nfor (let i = 1; i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < headers.length) continue;\n    const r = {};\n    for (let j = 0; j < headers.length; j++) {\n        r[headers[j].trim()] = row[j].trim();\n    }\n    ['dsc','sub','off_pk','sh_pk','pk_pk','off_fit','sh_fit','pk_fit','sp_fit',\n     'off_s','off_e','pk_s','pk_e','sp_s','sp_e','sp_limit','off_fit_s','off_fit_e','sh_fit_s','sh_fit_e','pk_fit_s','pk_fit_e','sp_fit_s','sp_fit_e','fixed_export',\n     'ev_s','ev_e','ev_pk','off_limit','billing_day'\n    ].forEach(f => { r[f] = parseFloat(r[f]) || 0; });\n    if (!r.name) continue;\n    r.sensor_id = 'sensor.retailer_' + r.name.toLowerCase().replace(/\\s+/g, '_') + '_daily';\n    retailers.push(r);\n}\nflow.set('retailers', retailers);\nflow.set('billingDay', retailers.length > 0 ? parseInt(retailers[0].billing_day) || 4 : 4);\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 510,
+    "y": 140,
+    "wires": [
+      [
+        "read_csv_file"
+      ]
+    ]
+  },
+  {
+    "id": "read_csv_file",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read 5minelec.csv",
+    "filename": "/share/file_notifications/5minelecNEW.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 430,
+    "y": 240,
+    "wires": [
+      [
+        "detect_gaps_for_ha"
+      ]
+    ]
+  },
+  {
+    "id": "calculate_costs",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Calculate Costs (PEA)",
+    "func": "node.warn('TRACE_CALC: START');\nconst retailers = flow.get('retailers');\nif (!retailers || retailers.length === 0) { return null; }\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') { msg.payload = msg.payload.toString('utf8'); }\n// node.warn('calculate_costs running with ' + (msg.payload.length || 0) + ' bytes of CSV data');\nglobal.set('ha_url', 'http://192.168.50.100:8123');\nglobal.set('ha_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU');\nconst csvData = msg.payload;\nconst lines = csvData.split('\\n');\n// node.warn('Total lines: ' + lines.length);\nfor (let i = 1; i < Math.min(lines.length, 4); i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    // node.warn('First rows: created=[' + row[0].trim() + '] PE=[' + row[12].trim() + ']');\n}\nfor (let i = Math.max(1, lines.length - 4); i < lines.length; i++) {\n    const row = lines[i].split(',');\n    if (row.length < 14) continue;\n    // node.warn('Last rows: created=[' + row[0].trim() + '] PE=[' + row[12].trim() + ']');\n}\nconst NW_OFFPEAK = 0.051535;\nconst NW_PEAK = 0.29245;\nconst NW_PEAK_START = 15;\nconst NW_PEAK_END = 21;\nconst billingDay = flow.get('billingDay') || 4;\nconst FLOW_EXPORT_KW = 18;\nfunction getNetworkCost(dt) {\n    const hour = dt.getHours();\n    const dow = dt.getDay();\n    if (dow >= 1 && dow <= 5 && hour >= NW_PEAK_START && hour < NW_PEAK_END) return NW_PEAK;\n    return NW_OFFPEAK;\n}\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction toLocalDateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nconst now = new Date();\nconst today = toLocalDateStr(now);\nconst yesterday = new Date(now);\nyesterday.setDate(yesterday.getDate() - 1);\nconst yesterdayStr = toLocalDateStr(yesterday);\nlet billingYear = now.getFullYear();\nlet billingMonth = now.getMonth();\nif (now.getDate() < billingDay) { billingMonth--; if (billingMonth < 0) { billingMonth = 11; billingYear--; } }\nconst billingStart = new Date(billingYear, billingMonth, billingDay);\nconst billingEnd = new Date(billingYear, billingMonth + 1, billingDay - 1, 23, 59, 59);\nconst billingStartStr = toLocalDateStr(billingStart);\nconst billingEndStr = toLocalDateStr(billingEnd);\n// Calculate PEA per billing period\nconst billingPea = {};\nlet bpKey = '';\nlet twapSum = 0, twapCount = 0, lwapNum = 0, lwapDen = 0;\nlet bpPrevOff = 0, bpPrevSh = 0, bpPrevPk = 0, bpPrevDay = '';\n\nfunction getBillingKey(dateStr) {\n    const d = new Date(dateStr + 'T00:00:00');\n    let y = d.getFullYear(), m = d.getMonth();\n    if (d.getDate() < billingDay) { m--; if (m < 0) { m = 11; y--; } }\n    return y + '-' + String(m + 1).padStart(2, '0');\n}\n\n\n// --- CSV PARSING WITH GAP FILLING ---\nconst rawRows = [];\nfor (let csv_i = 1; csv_i < lines.length; csv_i++) {\n    const row = lines[csv_i].split(',');\n    if (row.length < 14) continue;\n    const periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    // Date sanity filter: skip rows more than 90 days from now or far in the future\n    var pd = new Date(periodEnding.replace(' ', 'T'));\n    if ((pd - now) > 90 * 24 * 60 * 60 * 1000) continue;\n    rawRows.push({\n        lineIdx: csv_i,\n        periodEnding: periodEnding,\n        dateStr: periodEnding.split(' ')[0],\n        timeStr: periodEnding.split(' ')[1],\n        cumOff: parseFloat(row[1]) || 0,\n        cumSh: parseFloat(row[2]) || 0,\n        cumPk: parseFloat(row[3]) || 0,\n        cumExp: parseFloat(row[4]) || 0,\n        aemo: parseFloat(row[11]) || 0\n    });\n}\nconst gapAlerts = [];\nconst allRows = [];\n// Preprocess: redistribute data logger plateaus (consecutive zero-delta rows followed by catch-up jump)\nvar plateauAlerts = [];\ntry {\n// Plateau detection only (no redistribution \u2014 preserves TOU period cost accuracy)\nfor (var ri = 1; ri < rawRows.length; ri++) {\n    var prev = rawRows[ri - 1];\n    var curr = rawRows[ri];\n    if (prev.dateStr !== curr.dateStr) continue;\n    if (curr.cumOff + curr.cumSh + curr.cumPk - prev.cumOff - prev.cumSh - prev.cumPk < 0.01) continue;\n    var deltaTot = Math.max(0, (curr.cumOff - prev.cumOff) + (curr.cumSh - prev.cumSh) + (curr.cumPk - prev.cumPk));\n    if (deltaTot < 0.5 && deltaTot >= 0.01) continue;  // normal consumption\n    if (deltaTot < 0.01) continue;\n    // Large delta found - look back for consecutive zero-delta rows (plateau)\n    var lookback = 0;\n    while (ri - lookback - 2 >= 0 && rawRows[ri - lookback - 1].dateStr === curr.dateStr) {\n        var td = Math.max(0, (rawRows[ri - lookback - 1].cumOff - rawRows[ri - lookback - 2].cumOff) + (rawRows[ri - lookback - 1].cumSh - rawRows[ri - lookback - 2].cumSh) + (rawRows[ri - lookback - 1].cumPk - rawRows[ri - lookback - 2].cumPk));\n        if (td > 0.01) break;\n        lookback++;\n    }\n    if (lookback < 3) continue;  // need at least 3 stale intervals (15 min) to qualify\n    // Found plateau: lookback rows of zero delta before this row\n    var firstIdx = ri - lookback - 1;\n    if (firstIdx < 0) continue;\n    var firstRow = rawRows[firstIdx];\n    var gapOff = curr.cumOff - firstRow.cumOff;\n    var gapSh = curr.cumSh - firstRow.cumSh;\n    var gapPk = curr.cumPk - firstRow.cumPk;\n    var gapExp = Math.max(0, curr.cumExp - firstRow.cumExp);\n    var gapKwh = Math.max(0, gapOff + gapSh + gapPk);\n    var numSlots = lookback + 1;  // including the catch-up row\n    var fromTime = rawRows[ri - lookback].timeStr;\n    // Redistribute: adjust cumulative values for plateau rows + catch-up row\n    for (var sj = 1; sj <= numSlots; sj++) {\n        var targetIdx = firstIdx + sj;\n        var sCumOff = firstRow.cumOff + gapOff * sj / numSlots;\n        var sCumSh = firstRow.cumSh + gapSh * sj / numSlots;\n        var sCumPk = firstRow.cumPk + gapPk * sj / numSlots;\n        var sCumExp = firstRow.cumExp + gapExp * sj / numSlots;\n        rawRows[targetIdx]._redist = true;  // Mark but don't modify \u2014 preserves original TOU period cost\n    }\n    plateauAlerts.push({\n        date: curr.dateStr, from: fromTime, to: curr.timeStr,\n        gapMin: numSlots * 5, kwh: Math.round(gapKwh * 1000) / 1000,\n        export: Math.round(gapExp * 1000) / 1000, filled: numSlots\n    });\n}\nflow.set('lastPlateauAlerts', plateauAlerts);\n\n} catch(e) { /* node.warn(\"Plateau err: \" + e.message); */ flow.set('lastPlateauError', e.message); }\nvar lastSyntheticMins = -1;\nfor (let ri = 0; ri < rawRows.length; ri++) {\n    if (ri === 0) { allRows.push(rawRows[ri]); continue; }\n    var prev = rawRows[ri - 1];\n    var curr = rawRows[ri];\n    if (prev.dateStr !== curr.dateStr) {\n        lastSyntheticMins = -1;\n        var prevMins2 = parseInt(prev.timeStr.split(':')[0]) * 60 + parseInt(prev.timeStr.split(':')[1]);\n        var currMins2 = parseInt(curr.timeStr.split(':')[0]) * 60 + parseInt(curr.timeStr.split(':')[1]);\n        var gapMin2 = currMins2 - prevMins2;\n        if (gapMin2 < 0) gapMin2 += 1440;\n        var jumpOff = curr.cumOff - prev.cumOff;\n        var jumpSh = curr.cumSh - prev.cumSh;\n        var jumpPk = curr.cumPk - prev.cumPk;\n        var jumpExp = Math.max(0, curr.cumExp - prev.cumExp);\n        var jumpKwh = Math.max(0, jumpOff + jumpSh + jumpPk);\n            \n        if (gapMin2 > 6 && jumpKwh > 0.5) {\n            var numSlots2 = Math.floor(gapMin2 / 5);\n            var aemoHist2 = flow.get('aemoHistory') || {};\n            for (var sj = 1; sj < numSlots2; sj++) {\n                var sm2 = prevMins2 + sj * 5;\n                var synDate = prev.dateStr;\n                if (sm2 >= 1440) { sm2 -= 1440; synDate = curr.dateStr; }\n                var sh2 = Math.floor(sm2 / 60), smin2 = sm2 % 60;\n                allRows.push({\n                    periodEnding: synDate + ' ' + pad2(sh2) + ':' + pad2(smin2) + ':00',\n                    dateStr: synDate,\n                    timeStr: pad2(sh2) + ':' + pad2(smin2),\n                    cumOff: prev.cumOff + (jumpOff * sj / numSlots2),\n                    cumSh: prev.cumSh + (jumpSh * sj / numSlots2),\n                    cumPk: prev.cumPk + (jumpPk * sj / numSlots2),\n                    cumExp: prev.cumExp + (jumpExp * sj / numSlots2),\n                    aemo: aemoHist2[synDate + 'T' + pad2(sh2) + ':' + pad2(smin2)] || (prev.aemo + (curr.aemo - prev.aemo) * sj / numSlots2),\n                    _syn: true\n                });\n            }\n            gapAlerts.push({\n                date: prev.dateStr + ' to ' + curr.dateStr,\n                from: prev.timeStr,\n                to: curr.timeStr,\n                gapMin: gapMin2,\n                kwh: Math.round(jumpKwh * 1000) / 1000,\n                gapOff: jumpOff, gapSh: jumpSh, gapPk: jumpPk,\n                export: Math.round(jumpExp * 1000) / 1000,\n                filled: numSlots2 - 1\n            });\n        } else if (jumpKwh > 10 && gapMin2 <= 6) {\n            var numSlots2 = Math.max(12, Math.ceil(jumpKwh / 2));\n            var aemoHist2 = flow.get('aemoHistory') || {};\n            for (var sj = 1; sj <= numSlots2; sj++) {\n                var sm2 = prevMins2 + sj * 5;\n                var synDate = prev.dateStr;\n                if (sm2 >= 1440) { sm2 -= 1440; synDate = curr.dateStr; }\n                var sh2 = Math.floor(sm2 / 60), smin2 = sm2 % 60;\n                var frac = sj / numSlots2;\n                allRows.push({\n                    periodEnding: synDate + ' ' + pad2(sh2) + ':' + pad2(smin2) + ':00',\n                    dateStr: synDate,\n                    timeStr: pad2(sh2) + ':' + pad2(smin2),\n                    cumOff: prev.cumOff + (jumpOff * frac),\n                    cumSh: prev.cumSh + (jumpSh * frac),\n                    cumPk: prev.cumPk + (jumpPk * frac),\n                    cumExp: prev.cumExp + (jumpExp * frac),\n                    aemo: aemoHist2[synDate + 'T' + pad2(sh2) + ':' + pad2(smin2)] || (prev.aemo + (curr.aemo - prev.aemo) * frac),\n                    _syn: true\n                });\n            }\n            gapAlerts.push({\n                date: prev.dateStr + ' to ' + curr.dateStr,\n                from: prev.timeStr,\n                to: curr.timeStr,\n                gapMin: gapMin2,\n                kwh: Math.round(jumpKwh * 1000) / 1000,\n                gapOff: jumpOff, gapSh: jumpSh, gapPk: jumpPk,\n                export: Math.round(jumpExp * 1000) / 1000,\n                filled: numSlots2\n            });\n            lastSyntheticMins = (prevMins2 + numSlots2 * 5) % 1440;\n            continue;\n        }\n        allRows.push(curr);\n        continue;\n    }\n    var prevMins = parseInt(prev.timeStr.split(':')[0]) * 60 + parseInt(prev.timeStr.split(':')[1]);\n    var currMins = parseInt(curr.timeStr.split(':')[0]) * 60 + parseInt(curr.timeStr.split(':')[1]);\n    var gapMin = currMins - prevMins;\n    if (gapMin > 6) {\n        var gapOff = curr.cumOff - prev.cumOff;\n        var gapSh = curr.cumSh - prev.cumSh;\n        var gapPk = curr.cumPk - prev.cumPk;\n        var gapExp = Math.max(0, curr.cumExp - prev.cumExp);\n        var gapKwh = Math.max(0, gapOff + gapSh + gapPk);\n        var numSlots = Math.floor(gapMin / 5);\n        var slotKwh = numSlots > 0 ? gapKwh / numSlots : 0;\n        var slotExp = numSlots > 0 ? gapExp / numSlots : 0;\n        var aemoHist = flow.get('aemoHistory') || {};\n        for (var sj = 1; sj <= numSlots; sj++) {\n            var sm = prevMins + sj * 5;\n            if (sm >= 1440) break;\n            var sh = Math.floor(sm / 60), smin = sm % 60;\n            allRows.push({\n                periodEnding: prev.dateStr + ' ' + pad2(sh) + ':' + pad2(smin) + ':00',\n                dateStr: prev.dateStr,\n                timeStr: pad2(sh) + ':' + pad2(smin),\n                cumOff: prev.cumOff + (gapOff * sj / numSlots),\n                cumSh: prev.cumSh + (gapSh * sj / numSlots),\n                cumPk: prev.cumPk + (gapPk * sj / numSlots),\n                cumExp: prev.cumExp + (gapExp * sj / numSlots),\n                aemo: aemoHist[prev.dateStr + 'T' + pad2(sh) + ':' + pad2(smin)] || (prev.aemo + (curr.aemo - prev.aemo) * sj / numSlots),\n                _syn: true\n            });\n        }\n        gapAlerts.push({\n            date: prev.dateStr, from: prev.timeStr, to: curr.timeStr,\n            gapMin: gapMin, kwh: Math.round(gapKwh * 1000) / 1000,\n            gapOff: gapOff, gapSh: gapSh, gapPk: gapPk,\n            export: Math.round(gapExp * 1000) / 1000,\n            filled: numSlots\n        });\n    }\n    if (lastSyntheticMins >= 0) {\n        if (currMins > lastSyntheticMins) { lastSyntheticMins = -1; }\n        else { continue; }\n    }\n    allRows.push(curr);\n}\n\nfor (let ri = 0; ri < allRows.length; ri++) {\n    var e = allRows[ri];\n    const periodEnding = e.periodEnding;\n    const bKey = getBillingKey(e.dateStr);\n    \n    // If billing period changed, save PEA for previous period\n    if (bKey !== bpKey && bpKey !== '') {\n        const twap = twapCount > 0 ? twapSum / twapCount : 0;\n        const lwap = lwapDen > 0 ? lwapNum / lwapDen : 0;\n        billingPea[bpKey] = (lwap - twap) - 0.017;\n    }\n    if (bKey !== bpKey) {\n        bpKey = bKey;\n        twapSum = 0; twapCount = 0; lwapNum = 0; lwapDen = 0;\n        bpPrevOff = 0; bpPrevSh = 0; bpPrevPk = 0; bpPrevDay = '';\n    }\n    \n    // Accumulate TWAP/LWAP for ALL rows (not just current billing period)\n    const dt = new Date(periodEnding.replace(' ', 'T'));\n    const aemo = e.aemo;\n    const cumOff = e.cumOff;\n    const cumSh = e.cumSh;\n    const cumPk = e.cumPk;\n    if (e.dateStr !== bpPrevDay) { bpPrevOff = 0; bpPrevSh = 0; bpPrevPk = 0; bpPrevDay = e.dateStr; }\n    const importKwh = Math.max(0, (cumOff - bpPrevOff) + (cumSh - bpPrevSh) + (cumPk - bpPrevPk));\n    bpPrevOff = cumOff; bpPrevSh = cumSh; bpPrevPk = cumPk;\n    const inclNW = aemo + getNetworkCost(dt);\n    twapSum += inclNW; twapCount++;\n    lwapNum += inclNW * importKwh; lwapDen += importKwh;\n}\n// Save PEA for the last billing period\nif (bpKey !== '') {\n    const twap = twapCount > 0 ? twapSum / twapCount : 0;\n    const lwap = lwapDen > 0 ? lwapNum / lwapDen : 0;\n    billingPea[bpKey] = (lwap - twap) - 0.017;\n}\n\n\n// Current billing period PEA (for today's costs)\nconst pea = billingPea[getBillingKey(today)] || 0;\nconst flowPower = retailers.find(r => r.name === 'FlowPower');\nconst flowRate = (flowPower ? parseFloat(flowPower.off_pk) || 0 : 0) + pea;\n// Guard: if flowPower is undefined (retailer name mismatch), skip hybrid logic later\n// node.warn('PEA: ' + pea.toFixed(6) + ', TWAP: ' + twap.toFixed(4) + ', LWAP: ' + lwap.toFixed(4) + ', Rate: ' + flowRate.toFixed(4) + ', Today: ' + today + ', BP: ' + billingStartStr + ' to ' + billingEndStr);\n\n// --- DAILY SUMMARY ---\nconst dailyData = {};\nlet prevExport = 0, prevOffpeak = 0, prevShoulder = 0, prevPeak = 0, prevDay = '';\nfor (let ri = 0; ri < allRows.length; ri++) {\n    var e = allRows[ri];\n    const periodEnding = e.periodEnding;\n    const rowDateStr = e.dateStr;\n\n    if (rowDateStr !== prevDay) {\n        if (!dailyData[rowDateStr]) {\n            dailyData[rowDateStr] = {};\n            retailers.forEach(r => {\n                dailyData[rowDateStr][r.name] = {\n                    import: 0, export: 0, net: 0,\n                    adjImport: 0, adjExport: 0, expOutside45c: 0,\n                    intervals: 0, lastTime: '', totalImport: 0, totalExport: 0,\n                    eveningImport: 0,\n                    spExportUsed: 0,\n                    freeUsage: 0\n                };\n            });\n        }\n        prevDay = rowDateStr;\n    }\n\n    const cumOffpeak = e.cumOff;\n    const cumShoulder = e.cumSh;\n    const cumPeak = e.cumPk;\n    const cumExport = e.cumExp;\n    const aemoPrice = e.aemo;\n    const offpeakKwh = Math.max(0, cumOffpeak - prevOffpeak);\n    const shoulderKwh = Math.max(0, cumShoulder - prevShoulder);\n    const peakKwh = Math.max(0, cumPeak - prevPeak);\n    const exportKwh = Math.max(0, cumExport - prevExport);\n    prevOffpeak = cumOffpeak; prevShoulder = cumShoulder; prevPeak = cumPeak; prevExport = cumExport;\n    const timeParts = periodEnding.split(' ')[1].split(':');\n    const hour = parseInt(timeParts[0]);\n    const minute = parseInt(timeParts[1]);\n    const hourDecimal = hour + minute / 60;\n    const totalImport = offpeakKwh + shoulderKwh + peakKwh;\n\n    const dt = new Date(periodEnding.replace(' ', 'T'));\n    var isWeekend = dt.getDay() === 0 || dt.getDay() === 6;\n    const dd = dailyData[rowDateStr];\n    retailers.forEach(r => {\n        const d = dd[r.name];\n        d.intervals++;\n        d.lastTime = periodEnding.split(' ')[1];\n        d.totalImport += totalImport;\n        d.totalExport += exportKwh;\n        if (!(hourDecimal >= r.off_fit_s && hourDecimal < r.off_fit_e) && !(hourDecimal >= r.sh_fit_s && hourDecimal < r.sh_fit_e) && !(hourDecimal >= r.pk_fit_s && hourDecimal < r.pk_fit_e) && !(hourDecimal >= r.sp_fit_s && hourDecimal < r.sp_fit_e)) { d.expOutside45c -= exportKwh; }\n        if (hourDecimal >= 18 && hourDecimal < 21) { d.eveningImport += totalImport; }\n        if (r.model === 'fixed_tou') {\n            var impRate = r.sh_pk;\n            if (hourDecimal >= r.off_s && hourDecimal < r.off_e) {\n                impRate = r.off_pk;\n                if (r.off_limit > 0 && r.off_pk === 0) {\n                    d.freeUsage = d.freeUsage || 0;\n                    if (d.freeUsage < r.off_limit) {\n                        var fp = Math.min(totalImport, r.off_limit - d.freeUsage);\n                        d.freeUsage += fp;\n                        d.import += fp * impRate;\n                        var cp = totalImport - fp;\n                        d.import += cp * r.sh_pk;\n                        impRate = null;\n                    } else {\n                        impRate = r.sh_pk;\n                    }\n                }\n            } else if (hourDecimal >= r.ev_s && hourDecimal < r.ev_e && r.ev_pk > 0) {\n                impRate = r.ev_pk;\n            } else if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) {\n                impRate = r.pk_pk;\n            }\n            if (impRate !== null) d.import += totalImport * impRate;\n            // Feed-in priority: super peak (with daily limit) > peak > off-peak > shoulder (default)\n            if (hourDecimal >= r.sp_s && hourDecimal < r.sp_e && r.sp_limit > 0) {\n                // Super peak window with daily export limit\n                var remaining = r.sp_limit - d.spExportUsed;\n                if (remaining > 0) {\n                    var spPortion = Math.min(exportKwh, remaining);\n                    var fbPortion = exportKwh - spPortion;\n                    d.spExportUsed += spPortion;\n                    d.export += spPortion * r.sp_fit;\n                    if (fbPortion > 0) {\n                        var fbRate = r.sh_fit;\n                        if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) fbRate = r.pk_fit;\n                        else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) fbRate = r.off_fit;\n                        d.export += fbPortion * fbRate;\n                    }\n                } else {\n                    var fbRate = r.sh_fit;\n                    if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) fbRate = r.pk_fit;\n                    else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) fbRate = r.off_fit;\n                    d.export += exportKwh * fbRate;\n                }\n            } else {\n                var expRate = r.sh_fit;\n                if (hourDecimal >= r.sp_s && hourDecimal < r.sp_e) expRate = r.sp_fit;\n                else if (hourDecimal >= r.pk_s && hourDecimal < r.pk_e) expRate = r.pk_fit;\n                else if (hourDecimal >= r.off_s && hourDecimal < r.off_e) expRate = r.off_fit;\n                d.export += exportKwh * expRate;\n            }\n        } else if (r.model === 'hybrid') {\n            d.import += totalImport * flowRate;\n        } else if (r.model === 'variable') {\n            const dt = new Date(periodEnding.replace(' ', 'T'));\n            const importRate = aemoPrice + getNetworkCost(dt);\n            d.import += totalImport * importRate;\n            var fitRate = r.off_fit;\n            if (hourDecimal >= r.sp_fit_s && hourDecimal < r.sp_fit_e) fitRate = r.sp_fit;\n            else if (hourDecimal >= r.pk_fit_s && hourDecimal < r.pk_fit_e) fitRate = r.pk_fit;\n            else if (hourDecimal >= r.sh_fit_s && hourDecimal < r.sh_fit_e) fitRate = r.sh_fit;\n            d.export += exportKwh * aemoPrice * fitRate;\n        }\n    });\n}\n\n// Build detailed daily summary\nconst dailySummary = {};\nconst days = Object.keys(dailyData).sort();\ndays.forEach(day => {\n    const d0 = dailyData[day][retailers[0].name];\n    dailySummary[day] = {\n        totalImport: Math.round(d0.totalImport * 1000) / 1000,\n        totalExport: Math.round(d0.totalExport * 1000) / 1000,\n        pea: billingPea[getBillingKey(day)] || pea,\n        retailers: {}\n    };\n    let cheapestNet = Infinity, cheapestName = '';\n    retailers.forEach(r => {\n        const d = dailyData[day][r.name];\n        if (r.model === 'hybrid') {\n            const lastTimeParts = d.lastTime.split(':');\n            const lastHour = parseInt(lastTimeParts[0]);\n            const lastMinute = parseInt(lastTimeParts[1]);\n            const lastHourDecimal = lastHour + lastMinute / 60;\n            const adjImport = d.totalImport;\n            const fixedExport = parseFloat(flowPower ? flowPower.fixed_export : 0) || 0;\n            let adjExport = fixedExport > 0 ? fixedExport : Math.max(0, d.totalExport + d.expOutside45c);\n            d.adjImport = adjImport; d.adjExport = adjExport;\n            d.import = adjImport * flowRate;\n            d.export = adjExport * r.sp_fit;\n            d.net = r.dsc + (adjImport * flowRate) - (adjExport * r.sp_fit);\n        } else {\n            d.net = d.import - d.export + r.dsc;\n        }\n        // Globird evening rebate\n        if (r.name.indexOf('Globird') >= 0 && d.eveningImport < 0.09) {\n            d.net -= 1.00;\n            d.gloRebate = 1.00;\n        } else {\n            d.gloRebate = 0;\n        }\n        dailySummary[day].retailers[r.name] = {\n            dsc: Math.round(r.dsc * 100) / 100,\n            import: Math.round(d.import * 100) / 100,\n            export: Math.round(d.export * 100) / 100,\n            net: Math.round(d.net * 100) / 100,\n            gloRebate: d.gloRebate || 0\n        };\n        if (d.net < cheapestNet) { cheapestNet = d.net; cheapestName = r.name; }\n    });\n    dailySummary[day].cheapest = cheapestName;\n});\n\n\n// --- TODAY'S COSTS ---\nconst todayData = dailyData[today];\nconst totals = {};\nretailers.forEach(r => { totals[r.name] = { import: 0, export: 0, net: 0, adjImport: 0, adjExport: 0, expOutside45c: 0 }; });\nif (todayData) {\n    retailers.forEach(r => {\n        const d = todayData[r.name];\n        totals[r.name] = { import: Math.round(d.import * 100) / 100, export: Math.round(d.export * 100) / 100, net: Math.round(d.net * 100) / 100, adjImport: Math.round(d.adjImport * 100) / 100, adjExport: Math.round(d.adjExport * 100) / 100, expOutside45c: Math.round(d.expOutside45c * 100) / 100 };\n    });\n}\nlet cheapestName = retailers[0].name;\nlet cheapestNet = totals[retailers[0].name].net;\nretailers.forEach(r => { if (totals[r.name].net < cheapestNet) { cheapestNet = totals[r.name].net; cheapestName = r.name; } });\nconst flowpowerNet = totals['FlowPower'] ? totals['FlowPower'].net : 0;\n\n// --- 5-MIN DETAIL FOR ALL FIXED_TOU RETAILERS (ALL DATES IN BILLING PERIOD) ---\nconst fiveMinRetailers = retailers.filter(r => r.model === 'fixed_tou' || r.model === 'hybrid');\nconst fiveMinDetail = {};\n\nif (fiveMinRetailers.length > 0) {\n    // Build CSV lookup for ALL dates in billing period\n    const csvByDate = {};\n    let prevExport = 0, prevOff = 0, prevSh = 0, prevPk = 0, prevDay = '';\n        for (let ri = 0; ri < allRows.length; ri++) {\n        var e = allRows[ri];\n        const periodEnding = e.periodEnding;\n        const rowDateStr = e.dateStr;\n        if (rowDateStr < billingStartStr || rowDateStr > billingEndStr) {\n            if (rowDateStr !== prevDay) { prevExport = 0; prevOff = 0; prevSh = 0; prevPk = 0; prevDay = rowDateStr; }\n            continue;\n        }\n        if (rowDateStr !== prevDay) {\n            prevDay = rowDateStr;\n            if (!csvByDate[rowDateStr]) csvByDate[rowDateStr] = {};\n        }\n        const cumOff = e.cumOff;\n        const cumSh = e.cumSh;\n        const cumPk = e.cumPk;\n        const cumExp = e.cumExp;\n        const oKwh = Math.max(0, cumOff - prevOff);\n        const sKwh = Math.max(0, cumSh - prevSh);\n        const pKwh = Math.max(0, cumPk - prevPk);\n        const eKwh = Math.max(0, cumExp - prevExport);\n        prevOff = cumOff; prevSh = cumSh; prevPk = cumPk; prevExport = cumExp;\n        const timeParts = periodEnding.split(' ')[1].split(':');\n        const csvHour = parseInt(timeParts[0]);\n        const csvMin = parseInt(timeParts[1]);\n        const roundedMin = Math.floor(csvMin / 5) * 5;\n        const timeKey = pad2(csvHour) + ':' + pad2(roundedMin);\n        const aemoPrice = e.aemo;\n        const dtNW = e.dateStr + 'T' + pad2(csvHour) + ':' + pad2(csvMin) + ':00';\n        const nwCost = getNetworkCost(new Date(dtNW));\n        csvByDate[rowDateStr][timeKey] = { oKwh, sKwh, pKwh, eKwh, aemoPrice, nwCost };\n    }fiveMinRetailers.forEach(retailer => {\n        fiveMinDetail[retailer.name] = {};\n        const dates = Object.keys(csvByDate).sort();\n        dates.forEach(function(dateStr) {\n            var dateObj = new Date(dateStr + 'T00:00:00');\n            var isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;\n            const dayCSV = csvByDate[dateStr];\n            const intervals = [];\n            let eveningImport = 0;\n            let spExportUsed = 0;\n            let freeUsage = 0;\n            let hybTotalImportKwh = 0, hybTotalExportKwh = 0, hybExpOutside45c = 0, hybLastHourDec = 0, totalImpKwh = 0, totalExpKwh = 0, totalImpCostRaw = 0, totalExpCreditRaw = 0;\n            for (let h = 0; h < 24; h++) {\n                for (let m = 0; m < 60; m += 5) {\n                    if (dateStr === today && h * 60 + m >= now.getHours() * 60 + now.getMinutes()) continue;\n                    const timeKey = pad2(h) + ':' + pad2(m);\n                    const hourDecimal = h + m / 60;\n                    const csv = dayCSV[timeKey];\n                    const oKwh = csv ? csv.oKwh : 0;\n                    const sKwh = csv ? csv.sKwh : 0;\n                    const pKwh = csv ? csv.pKwh : 0;\n                    const eKwh = csv ? csv.eKwh : 0;\n                    const totalImport = oKwh + sKwh + pKwh;\n                    if (hourDecimal >= 18 && hourDecimal < 21) eveningImport += totalImport;\n                    let touPeriod = 'Shoulder';\n                    let impRate = retailer.sh_pk;\n                    let expRate = retailer.sh_fit;\n                    totalImpKwh += totalImport; totalExpKwh += eKwh;\n                    if (retailer.model === 'hybrid') {\n                        touPeriod = 'Flat';\n                        impRate = flowRate;\n                        expRate = retailer.off_fit;\n            if (hourDecimal >= retailer.sp_fit_s && hourDecimal < retailer.sp_fit_e) expRate = retailer.sp_fit;\n            else if (hourDecimal >= retailer.pk_fit_s && hourDecimal < retailer.pk_fit_e) expRate = retailer.pk_fit;\n            else if (hourDecimal >= retailer.sh_fit_s && hourDecimal < retailer.sh_fit_e) expRate = retailer.sh_fit;\n                    } else {\n                        if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) {\n                            touPeriod = 'Offpeak'; impRate = retailer.off_pk;\n                            if (retailer.off_limit > 0 && retailer.off_pk === 0) {\n                                if (freeUsage < retailer.off_limit) {\n                                    var fp = Math.min(totalImport, retailer.off_limit - freeUsage);\n                                    freeUsage += fp;\n                                    var cp = totalImport - fp;\n                                    impRate = totalImport > 0 ? (fp * retailer.off_pk + cp * retailer.sh_pk) / totalImport : 0;\n                                } else {\n                                    impRate = retailer.sh_pk;\n                                }\n                            }\n                        } else if (hourDecimal >= retailer.ev_s && hourDecimal < retailer.ev_e && retailer.ev_pk > 0) {\n                            touPeriod = 'Off'; impRate = retailer.ev_pk;\n                        } else if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) {\n                            touPeriod = 'Peak'; impRate = retailer.pk_pk;\n                        }\n                    }\n                    // Feed-in priority: super peak (with daily limit) > peak > off-peak > shoulder (default)\n                    if (retailer.model === 'fixed_tou' && hourDecimal >= retailer.sp_s && hourDecimal < retailer.sp_e && retailer.sp_limit > 0) {\n                        var remaining = retailer.sp_limit - spExportUsed;\n                        if (remaining > 0) {\n                            var spPortion = Math.min(eKwh, remaining);\n                            var fbPortion = eKwh - spPortion;\n                            spExportUsed += spPortion;\n                            expRate = retailer.sp_fit;\n                            var fbRate = retailer.sh_fit;\n                            if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) fbRate = retailer.pk_fit;\n                            else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) fbRate = retailer.off_fit;\n                            if (fbPortion > 0) {\n                                expRate = (spPortion * retailer.sp_fit + fbPortion * fbRate) / eKwh;\n                            }\n                        } else {\n                            expRate = retailer.sh_fit;\n                            if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) expRate = retailer.pk_fit;\n                            else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) expRate = retailer.off_fit;\n                        }\n                    } else if (retailer.model === 'fixed_tou') {\n                        if (hourDecimal >= retailer.sp_s && hourDecimal < retailer.sp_e) expRate = retailer.sp_fit;\n                        else if (hourDecimal >= retailer.pk_s && hourDecimal < retailer.pk_e) expRate = retailer.pk_fit;\n                        else if (hourDecimal >= retailer.off_s && hourDecimal < retailer.off_e) expRate = retailer.off_fit;\n                    }\n                    const impCost = totalImport * impRate;\n                    const expCredit = eKwh * expRate;\n                    totalImpCostRaw += impCost;\n                    totalExpCreditRaw += expCredit;\n                    if (retailer.model === 'hybrid') {\n                        hybTotalImportKwh += totalImport;\n                        hybTotalExportKwh += eKwh;\n                        if (!(hourDecimal >= retailer.off_fit_s && hourDecimal < retailer.off_fit_e) && !(hourDecimal >= retailer.sh_fit_s && hourDecimal < retailer.sh_fit_e) && !(hourDecimal >= retailer.pk_fit_s && hourDecimal < retailer.pk_fit_e) && !(hourDecimal >= retailer.sp_fit_s && hourDecimal < retailer.sp_fit_e)) hybExpOutside45c += eKwh;\n                        hybLastHourDec = hourDecimal;\n                    }\n                    const aemoPrice = csv ? csv.aemoPrice || 0 : 0;\n                    const nwCost = csv ? csv.nwCost || 0 : 0;\n                    intervals.push({\n                        time: timeKey,\n                        impKwh: Math.round(totalImport * 1000) / 1000,\n                        expKwh: Math.round(eKwh * 1000) / 1000,\n                        touPeriod: touPeriod,\n                        impRate: impRate,\n                        expRate: expRate,\n                        impCost: Math.round(impCost * 1000) / 1000,\n                        expCredit: Math.round(expCredit * 1000) / 1000,\n                        aemoPrice: aemoPrice,\n                        nwCost: nwCost\n                    });\n                }\n            }\n            let netTotal = totalImpCostRaw - totalExpCreditRaw;\n            let rebate = 0;\n            if (retailer.model === 'fixed_tou' && retailer.name.indexOf('Globird') >= 0 && eveningImport < 0.09) rebate = 1.00;\n            let totalImpCost = totalImpCostRaw;\n            let totalExpCredit = totalExpCreditRaw;\n            if (retailer.model === 'hybrid') {\n                const adjImport = hybTotalImportKwh;\n                const fixedExport2 = parseFloat(retailer.fixed_export) || 0;\n                const adjExport = fixedExport2 > 0 ? fixedExport2 : Math.max(0, hybTotalExportKwh - hybExpOutside45c);\n                totalImpCost = adjImport * flowRate;\n                totalExpCredit = adjExport * retailer.sp_fit;\n                netTotal = totalImpCost - totalExpCredit;\n            }\n            netTotal += retailer.dsc - rebate;\n            intervals.push({\n                time: 'TOTAL',\n                impKwh: Math.round(totalImpKwh * 1000) / 1000,\n                expKwh: Math.round(totalExpKwh * 1000) / 1000,\n                touPeriod: '',\n                impRate: '', expRate: '',\n                impCost: Math.round(totalImpCost * 1000) / 1000,\n                expCredit: Math.round(totalExpCredit * 1000) / 1000,\n                eveningImport: eveningImport,\n                netTotal: Math.round(netTotal * 100) / 100,\n                dsc: retailer.dsc,\n                rebate: rebate\n            });\n                        const finalImp = typeof intervals[intervals.length-1].impCost === 'number' ? intervals[intervals.length-1].impCost : totalImpCost;\n            const finalExp = typeof intervals[intervals.length-1].expCredit === 'number' ? intervals[intervals.length-1].expCredit : totalExpCredit;\n            fiveMinDetail[retailer.name][dateStr] = { intervals, summary: { eveningImport, netTotal: Math.round(netTotal * 100) / 100, dsc: retailer.dsc, rebate } };\n        });\n    });\n}\n\n/* Store 5-min data in flow variable for HTTP endpoint (not in HA sensor) */node.warn('TRACE_5MIN: storing fiveMinDetail');\n    flow.set('fiveMinDetail', fiveMinDetail);node.warn('TRACE_FM: building fmRetailers');\n    const fmRetailers = Object.keys(fiveMinDetail);\nconst fmDates = [...new Set(Object.values(fiveMinDetail).flatMap(r => Object.keys(r)))].sort();\nmsg.payload.fmRetailers = fmRetailers;\nmsg.payload.fmDates = fmDates;\n\n// For backward compatibility, also set globird5min for yesterday\nconst globird5min = fiveMinDetail['Globird VPP'] ? fiveMinDetail['Globird VPP'][yesterdayStr]?.intervals || [] : [];\n\nvar haUrl = global.get('ha_url');\nvar haToken = global.get('ha_token');\nvar gapAlertMsg = null;\nif (gapAlerts.length > 0) {\n    var lastAlert = flow.get('lastGapAlert') || '';\n    var currentAlert = JSON.stringify(gapAlerts);\n    if (currentAlert !== lastAlert) {\n        flow.set('lastGapAlert', currentAlert);\n        var msgText = 'Data logger dropouts detected:\\n';\n        gapAlerts.forEach(function(g) {\n            msgText += g.date + ' ' + g.from + ' \u2192 ' + g.to + ' (' + g.gapMin + 'min gap, ' + g.kwh + ' kWh)\\n';\n        });\n        gapAlertMsg = {\n            payload: JSON.stringify({ title: 'Energy Data Gap Alert', message: msgText, notification_id: 'energy_gap_alert' }),\n            url: haUrl + '/api/services/persistent_notification/create',\n            method: 'POST',\n            headers: { 'Authorization': 'Bearer ' + haToken, 'Content-Type': 'application/json' }\n        };\n    }\n}\nvar plateauAlertMsg = null;\nif (plateauAlerts.length > 0) {\n    var lastAlert = flow.get('lastPlateauAlert') || '';\n    var currentAlert = JSON.stringify(plateauAlerts);\n    if (currentAlert !== lastAlert) {\n        flow.set('lastPlateauAlert', currentAlert);\n        var msgText = 'Sensor data plateaus detected and corrected:\\n';\n        plateauAlerts.forEach(function(p) {\n            msgText += p.date + ' ' + p.from + ' \u2192 ' + p.to + ' (' + p.gapMin + 'min, ' + p.kwh + ' kWh redistributed)\\n';\n        });\n        plateauAlertMsg = {\n            payload: JSON.stringify({ title: 'Energy Sensor Plateau Alert', message: msgText, notification_id: 'energy_plateau_alert' }),\n            url: haUrl + '/api/services/persistent_notification/create',\n            method: 'POST',\n            headers: { 'Authorization': 'Bearer ' + haToken, 'Content-Type': 'application/json' }\n        };\n    }\n}\n\nmsg.payload = { totals, retailers, cheapest: cheapestName, savings: Math.round((flowpowerNet - cheapestNet) * 100) / 100, pea, flowRate, dailySummary, globird5min, fmRetailers, fmDates, todayDate: yesterdayStr };\n// Write corrected CSV to fix gaps at source\nif (gapAlerts.length > 0) {\n    var csvLines = csvData.split(String.fromCharCode(10));\n    var insertCount = 0;\n    var aemoHist = flow.get('aemoHistory') || {};\n    gapAlerts.forEach(function(ga) {\n        var fromParts = ga.from.split(':');\n        var toParts = ga.to.split(':');\n        var fromMins = parseInt(fromParts[0]) * 60 + parseInt(fromParts[1]);\n        var toMins = parseInt(toParts[0]) * 60 + parseInt(toParts[1]);\n        var numSlots = Math.floor((toMins - fromMins) / 5);\n        var insertIdx = -1;\n        var targetTime = ga.to;\n        for (var cl = 1; cl < csvLines.length; cl++) {\n            var parts = csvLines[cl].split(',');\n            if (parts.length < 13) continue;\n            var pe = (parts[12] || '').trim().split(' ');\n            var t = pe.length > 1 ? pe[1] : '';\n            if (t === targetTime && (parts[0] || '').indexOf(ga.date) >= 0) {\n                insertIdx = cl;\n                break;\n            }\n        }\n        if (insertIdx < 0) return;\n        var targetRow = csvLines[insertIdx].split(',');\n        var baseOff = parseFloat(targetRow[1]) || 0;\n        var baseSh = parseFloat(targetRow[2]) || 0;\n        var basePk = parseFloat(targetRow[3]) || 0;\n        var baseExp = parseFloat(targetRow[4]) || 0;\n        var gapOff = ga.gapOff || ga.kwh;\n        var gapSh = ga.gapSh || 0;\n        var gapPk = ga.gapPk || 0;\n        var gapExp = ga.export;\n        for (var sj = 1; sj <= numSlots; sj++) {\n            var sm = fromMins + sj * 5;\n            if (sm >= 1440) break;\n            var sh = Math.floor(sm / 60), smin = sm % 60;\n            var sTime = pad2(sh) + ':' + pad2(smin);\n            var sKey = ga.date + 'T' + sTime;\n            var aemoV = aemoHist[sKey] || 0;\n            var sCumOff = baseOff - gapOff + gapOff * sj / numSlots;\n            var sCumSh = baseSh - gapSh + gapSh * sj / numSlots;\n            var sCumPk = basePk - gapPk + gapPk * sj / numSlots;\n            var sCumExp = baseExp - gapExp + gapExp * sj / numSlots;\n            var csvRow = ga.date + ' ' + sTime + ':00,' + sCumOff.toFixed(3) + ',' + sCumSh.toFixed(3) + ',' + sCumPk.toFixed(3) + ',' + sCumExp.toFixed(3) + ',0,0,0,0,0,0,' + aemoV.toFixed(2) + ',' + ga.date + ' ' + sTime + ':00,0';\n            csvLines.splice(insertIdx + (sj - 1), 0, csvRow);\n        }\n        insertCount += numSlots;\n    });\n    var backupNow = new Date();\n    var ts = backupNow.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(now.getSeconds()).padStart(2,'0');\n    var csvContent = csvLines.join(String.fromCharCode(10));\n    var backupMsg = { payload: csvContent, filename: '/share/file_notifications/5minelec.csv.backup.' + ts };\n    var fixMsg = { payload: csvContent };\n    node.send([msg, gapAlertMsg, backupMsg, fixMsg]);\n    return;\n}\n// Plateau redistribution: write corrected cumulative values to CSV\nif (plateauAlerts.length > 0) {\n    var csvLines = csvData.split(String.fromCharCode(10));\n    var aemoHist = flow.get('aemoHistory') || {};\n    plateauAlerts.forEach(function(pa) {\n        // Find all affected rows in csvLines and update their cumulative values\n        var fromParts = pa.from.split(':');\n        var toParts = pa.to.split(':');\n        var fromMins = parseInt(fromParts[0]) * 60 + parseInt(fromParts[1]);\n        var toMins = parseInt(toParts[0]) * 60 + parseInt(toParts[1]);\n        var numSlots = Math.floor((toMins - fromMins) / 5);\n        for (var cl = 1; cl < csvLines.length; cl++) {\n            var parts = csvLines[cl].split(',');\n            if (parts.length < 13) continue;\n            var pt = (parts[12] || '').trim().split(' ');\n            var t = pt.length > 1 ? pt[1] : '';\n            var pe = (pt[0] || '');\n            if (pe !== pa.date) continue;\n            var tMins = parseInt(t.split(':')[0]) * 60 + parseInt(t.split(':')[1]);\n            if (tMins >= fromMins && tMins <= toMins) {\n                // Find corresponding rawRow\n                for (var rr = 0; rr < rawRows.length; rr++) {\n                    if (rawRows[rr].lineIdx === cl && rawRows[rr]._redist) {\n                        parts[1] = rawRows[rr].cumOff.toFixed(3);\n                        parts[2] = rawRows[rr].cumSh.toFixed(3);\n                        parts[3] = rawRows[rr].cumPk.toFixed(3);\n                        parts[4] = rawRows[rr].cumExp.toFixed(3);\n                        var sTime = t;\n                        var sKey = pa.date + 'T' + sTime;\n                        if (aemoHist[sKey]) parts[11] = aemoHist[sKey].toFixed(2);\n                        csvLines[cl] = parts.join(',');\n                        break;\n                    }\n                }\n            }\n        }\n    });\n    var backupNow = new Date();\n    var ts = backupNow.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(now.getSeconds()).padStart(2,'0');\n    var csvContent = csvLines.join(String.fromCharCode(10));\n    var backupMsg = { payload: csvContent, filename: '/share/file_notifications/5minelec.csv.backup.' + ts };\n    var fixMsg = { payload: csvContent };\n    node.send([msg, plateauAlertMsg, backupMsg, fixMsg]);\n    return;\n}node.warn('TRACE_RETURN: sending output');\n    return [msg, gapAlertMsg];",
+    "outputs": 4,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 280,
+    "wires": [
+      [
+        "build_sensor_messages",
+        "build_daily_summary",
+        "build_daily_detail",
+        "build_five_min_detail",
+        "build_monthly_summary",
+        "build_seasonal_report"
+      ],
+      [],
+      [
+        "write_csv_backup"
+      ],
+      [
+        "write_fixed_csv"
+      ]
+    ]
+  },
+  {
+    "id": "build_sensor_messages",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build Sensor Messages",
+    "func": "node.warn('TRACE_BSM: START');\nvar haUrl = global.get('ha_url');\n\nvar totals = msg.payload.totals;\nvar retailers = msg.payload.retailers;\nvar cheapest = msg.payload.cheapest;\nvar savings = msg.payload.savings;\nvar pea = msg.payload.pea;\nvar flowRate = msg.payload.flowRate;\n\nvar currentIds = retailers.map(function(r) { return r.sensor_id; });\nvar previousIds = flow.get('retailer_sensor_ids') || [];\nvar staleIds = previousIds.filter(function(id) { return currentIds.indexOf(id) === -1; });\n\nvar postMsgs = [];\nretailers.forEach(function(r) {\n    var value = Math.round(totals[r.name].net * 100) / 100;\n    var attrs = {\n        friendly_name: r.name + ' Daily Cost',\n        unit_of_measurement: '$',\n        icon: 'mdi:cash',\n        retailer_model: r.model,\n        import_cost: Math.round(totals[r.name].import * 100) / 100,\n        export_credit: Math.round(totals[r.name].export * 100) / 100\n    };\n    if (r.model === 'hybrid') {\n        attrs.pea = pea.toFixed(6);\n        attrs.flow_rate = flowRate.toFixed(4);\n        attrs.adj_import = Math.round(totals[r.name].adjImport * 100) / 100;\n        attrs.adj_export = Math.round(totals[r.name].adjExport * 100) / 100;\n        attrs.exp_outside_45c = Math.round(totals[r.name].expOutside45c * 100) / 100;\n    }\n    postMsgs.push({\n        payload: { state: value.toString(), attributes: attrs },\n        url: haUrl + '/api/states/' + r.sensor_id\n    });\n});\npostMsgs.push({\n    payload: { state: cheapest, attributes: { friendly_name: 'Cheapest Retailer Today', icon: 'mdi:trophy', version: '##GIT_VERSION##' } },\n    url: haUrl + '/api/states/sensor.retailer_cheapest'\n});\npostMsgs.push({\n    payload: { state: savings.toString(), attributes: { friendly_name: 'Savings vs Flow Today', unit_of_measurement: '$', icon: 'mdi:piggy-bank', version: '##GIT_VERSION##' } },\n    url: haUrl + '/api/states/sensor.retailer_savings'\n});\n\nvar deleteMsgs = [];\nstaleIds.forEach(function(id) {\n    deleteMsgs.push({ url: haUrl + '/api/states/' + id });\n});\n\nflow.set('retailer_sensor_ids', currentIds);\nnode.send([postMsgs, deleteMsgs]);",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 550,
+    "y": 440,
+    "wires": [
+      [
+        "ha_rest_api"
+      ],
+      [
+        "ha_rest_api_delete"
+      ]
+    ]
+  },
+  {
+    "id": "build_daily_summary",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build Daily Summary",
+    "func": "function billingMonth(d) {\n    var parts = d.split('-'), y = parseInt(parts[0]), m = parseInt(parts[1]), dy = parseInt(parts[2]);\n    if (dy < (flow.get('billingDay') || 4)) { m--; if (m < 1) { m = 12; y--; } }\n    return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m];\n}\nconst dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst days = Object.keys(dailySummary).sort().reverse();\nconst rNames = retailers.map(r => r.name);\n\nlet html = '<div style=\"max-height:400px;overflow-y:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index:1\">';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:100px\">Date</th>';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:50px;font-size:10px;color:#888\">BP</th>';\nrNames.forEach(function(name) { html += '<th style=\"padding:4px;text-align:right\">' + name + '</th>'; });\nhtml += '<th style=\"padding:4px;text-align:right;color:#4CAF50;min-width:100px\">Cheapest</th></tr></thead><tbody>';\ndays.forEach(function(day, idx) {\n    var isToday = day === days[days.length - 1];\n    var bg = isToday ? 'background:#1a1a2e;' : (idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;');\n    var d = dailySummary[day];\n    html += '<tr style=\"' + bg + '\"><td style=\"padding:4px;text-align:left;color:#aaa\">' + day + '</td>';\n    html += '<td style=\"padding:4px;text-align:left;font-size:10px;color:#666\">' + billingMonth(day) + '</td>';\n    rNames.forEach(function(name) {\n        var val = d.retailers[name].net;\n        var isCheapest = name === d.cheapest;\n        var color = isCheapest ? '#4CAF50' : 'white';\n        html += '<td style=\"padding:4px;text-align:right;color:' + color + '\">$' + val.toFixed(2) + '</td>';\n    });\n    html += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + d.cheapest + '</td></tr>';\n});\nhtml += '<tr style=\"background:#222;border-top:1px solid #555\"><td style=\"padding:4px;text-align:left;color:#aaa;font-weight:bold\">Total</td><td style=\"padding:4px\"></td>';\nvar cheapestTotal = '', cheapestTotalVal = Infinity;\nrNames.forEach(function(name) {\n    var total = 0;\n    days.forEach(function(day) { total += dailySummary[day].retailers[name].net; });\n    if (total < cheapestTotalVal) { cheapestTotalVal = total; cheapestTotal = name; }\n});\nrNames.forEach(function(name) {\n    var total = 0;\n    days.forEach(function(day) { total += dailySummary[day].retailers[name].net; });\n    var color = name === cheapestTotal ? '#4CAF50' : 'white';\n    html += '<td style=\"padding:4px;text-align:right;color:' + color + ';font-weight:bold\">$' + total.toFixed(2) + '</td>';\n});\nhtml += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + cheapestTotal + '</td></tr>';\nhtml += '</tbody></table></div>';\n\nvar dailyData = [];\ntry {\n    dailyData = days.slice().reverse().map(function(day) {\n        var d = dailySummary[day];\n        var entry = { date: day, billing_month: billingMonth(day) };\n        rNames.forEach(function(name) { entry[name] = Math.round(d.retailers[name].net * 100) / 100; });\n        entry.cheapest = d.cheapest;\n        rNames.forEach(function(name) {\n            var cum = 0;\n            days.slice().reverse().filter(function(d2) { return d2 <= day; }).forEach(function(d2) {\n                cum += dailySummary[d2].retailers[name].net;\n            });\n            entry[name + '_cum'] = Math.round(cum * 100) / 100;\n        });\n        entry.import_kwh = Math.round(d.totalImport * 1000) / 1000;\n        entry.export_kwh = Math.round(d.totalExport * 1000) / 1000;\n        return entry;\n    });\n} catch(e) {\n    // node.warn('dailyData failed: ' + e.message);\n}\n\nvar attrs = {\n    friendly_name: 'Daily Cost Summary',\n    icon: 'mdi:chart-bar',\n    days: days.length,\n    billing_period: days[days.length - 1] + ' to ' + days[0],\n    html: html,\n    daily_data: dailyData\n};\nrNames.forEach(function(name) {\n    var total = 0;\n    days.forEach(function(day) { total += dailySummary[day].retailers[name].net; });\n    attrs[name.toLowerCase().replace(/\\s+/g, '_') + '_total'] = Math.round(total * 100) / 100;\n});\nflow.set('dailyChartData', dailyData);\nnode.send({\n    payload: JSON.stringify({ state: cheapestTotal + ' $' + cheapestTotalVal.toFixed(2), attributes: attrs }),\n    url: haUrl + '/api/states/sensor.retailer_daily_summary',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 500,
+    "wires": [
+      [
+        "ha_rest_api_daily"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_daily",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Daily Summary to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 700,
+    "y": 500,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "ha_rest_api",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 750,
+    "y": 420,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "store_ha_credentials",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Set HA URL + Token",
+    "func": "global.set('ha_url', 'http://192.168.50.100:8123');\nglobal.set('ha_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU');\n// node.warn('HA credentials stored.');\nreturn null;",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 700,
+    "wires": []
+  },
+  {
+    "id": "inject_init",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Click to set credentials",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "1",
+    "topic": "",
+    "x": 180,
+    "y": 700,
+    "wires": [
+      [
+        "store_ha_credentials"
+      ]
+    ]
+  },
+  {
+    "id": "build_daily_detail",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build Daily Detail",
+    "func": "const dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\nconst days = Object.keys(dailySummary).sort().reverse();\nconst rNames = retailers.map(r => r.name);\n\n// Scrollable table with fixed header\nlet html = '<div style=\"max-height:400px;overflow:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:13px;font-family:monospace;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index:1\">';\nhtml += '<th style=\"padding:3px 4px;text-align:left;border-bottom:1px solid #555;min-width:80px;position:sticky;left:0;z-index:3;background:#333\" rowspan=\"2\">Date</th><th style=\"padding:3px 4px;text-align:left;border-bottom:1px solid #555;min-width:40px;font-size:10px;color:#888\" rowspan=\"2\">BP</th>';\nhtml += '<th style=\"padding:3px 4px;text-align:right;border-bottom:1px solid #555;min-width:70px\" rowspan=\"2\">Import<br>kWh</th>';\nhtml += '<th style=\"padding:3px 4px;text-align:right;border-bottom:1px solid #555;min-width:70px\" rowspan=\"2\">Export<br>kWh</th>';\nrNames.forEach(name => {\n    html += '<th style=\"padding:3px 4px;text-align:center;border-bottom:1px solid #555;border-left:1px solid #555\" colspan=\"5\">' + name + '</th>';\n});\nhtml += '<th style=\"padding:3px 4px;text-align:center;border-bottom:1px solid #555;border-left:1px solid #555\" rowspan=\"2\">Cheapest</th>';\nhtml += '</tr>';\nhtml += '<tr style=\"background:#333;color:#aaa\">';\nrNames.forEach(() => {\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:11px;border-left:1px solid #555\">DSC</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:11px\">Imp</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:11px\">Exp</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:11px\">Rbt</th>';\n    html += '<th style=\"padding:2px 3px;text-align:right;font-size:11px\">Net</th>';\n});\nhtml += '</tr>';\nhtml += '</thead><tbody>';\n\ndays.forEach((day, idx) => {\n    const isToday = day === days[days.length - 1];\n    const bg = isToday ? 'background:#1a1a2e;' : (idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;');\n    const d = dailySummary[day];\n    html += '<tr style=\"' + bg + '\">';\n        function billingMonth(d) {\n        var parts = d.split('-'), y = parseInt(parts[0]), m = parseInt(parts[1]), dy = parseInt(parts[2]);\n        if (dy < (flow.get('billingDay') || 4)) { m--; if (m < 1) { m = 12; y--; } }\n        return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m];\n    }\n    html += '<td style=\"padding:3px 4px;text-align:left;color:#aaa;border-bottom:1px solid #222;position:sticky;left:0;z-index:1;' + bg + '\">' + day.substring(8) + '-' + day.substring(5, 7) + '</td>';\n    html += '<td style=\"padding:3px 4px;text-align:left;font-size:10px;color:#666;border-bottom:1px solid #222\">' + billingMonth(day) + '</td>';\n    html += '<td style=\"padding:3px 4px;text-align:right;color:#8cf;border-bottom:1px solid #222\">' + d.totalImport.toFixed(1) + '</td>';\n    html += '<td style=\"padding:3px 4px;text-align:right;color:#fc8;border-bottom:1px solid #222\">' + d.totalExport.toFixed(1) + '</td>';\n    rNames.forEach(name => {\n        const rd = d.retailers[name];\n        const isCheapest = name === d.cheapest;\n        const netColor = isCheapest ? '#4CAF50' : 'white';\n        const bl = 'border-left:1px solid #333;';\n        const rebate = rd.gloRebate || 0;\n        const rebateColor = rebate > 0 ? '#4CAF50' : '#888';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#888;font-size:11px;border-bottom:1px solid #222;' + bl + '\">$' + rd.dsc.toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#b8b8ff;font-size:11px;border-bottom:1px solid #222\">$' + rd.import.toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:#8fbc8f;font-size:11px;border-bottom:1px solid #222\">$' + (-rd.export).toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:' + rebateColor + ';font-size:11px;border-bottom:1px solid #222\">$' + (-rebate).toFixed(2) + '</td>';\n        html += '<td style=\"padding:3px 3px;text-align:right;color:' + netColor + ';font-size:11px;font-weight:bold;border-bottom:1px solid #222\">$' + rd.net.toFixed(2) + '</td>';\n    });\n    html += '<td style=\"padding:3px 4px;text-align:center;color:#4CAF50;font-weight:bold;border-bottom:1px solid #222;border-left:1px solid #333\">' + d.cheapest + '</td>';\n    html += '</tr>';\n});\n\nhtml += '<tr style=\"background:#222;border-top:2px solid #555\">';\nhtml += '<td style=\"padding:3px 4px;text-align:left;color:#aaa;font-weight:bold;position:sticky;left:0;z-index:1;background:#222\">Total</td><td style=\"padding:3px 4px;border-bottom:1px solid #222;background:#222\"></td>';\nhtml += '<td colspan=\"2\" style=\"padding:3px 4px;border-bottom:1px solid #222\"></td>';\nlet cheapestTotal = '', cheapestTotalVal = Infinity;\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    if (total < cheapestTotalVal) { cheapestTotalVal = total; cheapestTotal = name; }\n});\nrNames.forEach(name => {\n    let tDsc = 0, tImp = 0, tExp = 0, tRebate = 0, tNet = 0;\n    days.forEach(day => { tDsc += dailySummary[day].retailers[name].dsc; tImp += dailySummary[day].retailers[name].import; tExp += dailySummary[day].retailers[name].export; tRebate += dailySummary[day].retailers[name].gloRebate || 0; tNet += dailySummary[day].retailers[name].net; });\n    const isCheapest = name === cheapestTotal;\n    const netColor = isCheapest ? '#4CAF50' : 'white';\n    const rebateColor = tRebate > 0 ? '#4CAF50' : '#888';\n    const bl = 'border-left:1px solid #333;';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#888;font-size:11px;font-weight:bold;border-bottom:1px solid #222;' + bl + '\">$' + tDsc.toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#b8b8ff;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">$' + tImp.toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:#8fbc8f;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">$' + (-tExp).toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:' + rebateColor + ';font-size:11px;font-weight:bold;border-bottom:1px solid #222\">$' + (-tRebate).toFixed(2) + '</td>';\n    html += '<td style=\"padding:3px 3px;text-align:right;color:' + netColor + ';font-size:11px;font-weight:bold;border-bottom:1px solid #222\">$' + tNet.toFixed(2) + '</td>';\n});\nhtml += '<td style=\"padding:3px 4px;text-align:center;color:#4CAF50;font-weight:bold;border-left:1px solid #333\">' + cheapestTotal + '</td>';\nhtml += '</tr></tbody></table></div>';\n\nconst attrs = {\n    friendly_name: 'Daily Cost Detail',\n    icon: 'mdi:table-large',\n    days: days.length,\n    billing_period: days[0] + ' to ' + days[days.length - 1],\n    html: html\n};\nrNames.forEach(name => {\n    let total = 0;\n    days.forEach(day => { total += dailySummary[day].retailers[name].net; });\n    attrs[name.toLowerCase().replace(/\\s+/g, '_') + '_total'] = Math.round(total * 100) / 100;\n});\nnode.send({\n    payload: JSON.stringify({ state: cheapestTotal + ' $' + cheapestTotalVal.toFixed(2), attributes: attrs }),\n    url: haUrl + '/api/states/sensor.retailer_daily_detail',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 330,
+    "y": 540,
+    "wires": [
+      [
+        "ha_rest_api_detail"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_detail",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Daily Detail to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 690,
+    "y": 540,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "build_five_min_detail",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build 5-Min Detail (All Retailers)",
+    "func": "var fmRetailers = msg.payload.fmRetailers;\nvar fmDates = msg.payload.fmDates;\nif (!fmRetailers || fmRetailers.length === 0) { return null; }\nvar haUrl = global.get('ha_url');\nvar haToken = global.get('ha_token');\n\nvar chartData = {};\ntry {\n    var fmd = flow.get('fiveMinDetail') || {};\n    Object.keys(fmd).forEach(function(r) {\n        var dates = Object.keys(fmd[r]).sort().reverse().slice(0, 2);\n        dates.forEach(function(d) {\n            var day = fmd[r][d];\n            if (!day || !day.intervals) return;\n            var key = r + '_' + d;\n            chartData[key] = day.intervals.filter(function(i) { return i.time !== 'TOTAL'; }).map(function(i) {\n                return { t: i.time, ik: i.impKwh, ap: i.aemoPrice, nw: i.nwCost };\n            });\n        });\n    });\n} catch(e) {\n    // node.warn('chartData failed: ' + e.message);\n}\n\nnode.send({\n    payload: JSON.stringify({\n        state: String(fmRetailers.length) + ' retailers',\n        attributes: {\n            friendly_name: '5-Minute Detail (Data via HTTP)',\n            icon: 'mdi:table-large',\n            available_retailers: fmRetailers,\n            available_dates: fmDates,\n            chart_data: chartData\n        }\n    }),\n    url: haUrl + '/api/states/sensor.retailer_five_min_detail',\n\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 580,
+    "wires": [
+      [
+        "ha_rest_api_five_min_detail"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_five_min_detail",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST 5-Min Detail (All) to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 580,
+    "y": 580,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "http_in_01",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET 5-min Detail",
+    "url": "/api/5min-detail",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 740,
+    "wires": [
+      [
+        "http_handler"
+      ]
+    ]
+  },
+  {
+    "id": "http_handler",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Generate 5-min HTML",
+    "func": "try {\n    const fiveMinDetail = flow.get('fiveMinDetail');\n    const sendJSON = (data, status) => {\n        msg.payload = JSON.stringify(data);\n        msg.statusCode = status || 200;\n        msg.headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };\n        node.send(msg);\n    };\n    if (!fiveMinDetail || Object.keys(fiveMinDetail).length === 0) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">No data. Wait for next 5-min update.</div>' });\n        return;\n    }\n    const query = msg.req.query || {};\n    const retailer = query.retailer || '';\n    const fromDate = query.from || '';\n    const toDate = query.to || '';\n    const availableRetailers = Object.keys(fiveMinDetail);\n    const allDates = [...new Set(Object.values(fiveMinDetail).flatMap(r => Object.keys(r)))].sort().reverse();\n    \n    // If type=daily, return daily chart data\n    if (query.type === 'daily') {\n        const dailyChartData = flow.get('dailyChartData');\n        if (!dailyChartData || dailyChartData.length === 0) {\n            sendJSON({ error: 'No daily chart data available' });\n            return;\n        }\n        sendJSON({ daily_data: dailyChartData });\n        return;\n    }\n\n\n    if (!retailer || !fromDate || !toDate) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">Specify retailer, from, and to query params.</div>', availableRetailers, allDates });\n        return;\n    }\n    if (!fiveMinDetail[retailer]) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">Retailer not found: ' + retailer + '</div>', availableRetailers, allDates });\n        return;\n    }\n    const retailerData = fiveMinDetail[retailer];\n    const matchedDates = Object.keys(retailerData).filter(d => d >= fromDate && d <= toDate).sort().reverse();\n    if (matchedDates.length === 0) {\n        sendJSON({ html: '<div style=\"color:#888;padding:20px;text-align:center\">No data for selected date range.</div>', availableRetailers, allDates });\n        return;\n    }\n// If format=chart, return structured JSON for apexcharts\n\n    if (query.format === 'chart') {\n        const chartData = {};\n        matchedDates.forEach(dateStr => {\n            const dayData = retailerData[dateStr];\n            if (!dayData || !dayData.intervals) return;\n            dayData.intervals.forEach(r => {\n                if (r.time === 'TOTAL') return;\n                chartData[dateStr + 'T' + r.time] = {\n                    impKwh: r.impKwh,\n                    expKwh: r.expKwh,\n                    aemoPrice: r.aemoPrice,\n                    nwCost: r.nwCost,\n                    touPeriod: r.touPeriod\n                };\n            });\n        });\n        const sortedKeys = Object.keys(chartData).sort();\n        const chartArray = sortedKeys.map(k => ({\n            datetime: k,\n            impKwh: chartData[k].impKwh,\n            expKwh: chartData[k].expKwh,\n            aemoPrice: chartData[k].aemoPrice,\n            nwCost: chartData[k].nwCost,\n            touPeriod: chartData[k].touPeriod\n        }));\n        sendJSON({ retailer, from: fromDate, to: toDate, intervals: chartArray });\n        return;\n    }\n    \n    var _plateauAlerts = flow.get('lastPlateauAlerts') || [];\n    var _plateauError = flow.get('lastPlateauError') || '';\n    if (_plateauAlerts.length > 0 && _plateauError) _plateauAlerts.push({error: _plateauError});\n    var _paHtml = '';\n    if (_plateauAlerts.length > 0) {\n        _paHtml = '<div style=\"background:#ff6;color:#000;padding:4px 8px;font-size:10px;margin-bottom:8px\"><b>Plateau Alerts:</b><br>';\n        _plateauAlerts.forEach(function(pa) {\n            _paHtml += pa.date + ' ' + pa.from + '\u2192' + pa.to + ' (' + pa.kwh + 'kWh over ' + pa.gapMin + 'min, ' + pa.filled + ' intervals filled)<br>';\n        });\n        _paHtml += '</div>';\n    }\n    let html = _paHtml;\n    matchedDates.forEach(dateStr => {\n        const dayData = retailerData[dateStr];\n        if (!dayData || !dayData.intervals) return;\n        const intervals = dayData.intervals.slice(0, -1).reverse();\n        const summary = dayData.intervals[dayData.intervals.length - 1];\n        html += '<div style=\"margin-bottom:12px;border:1px solid #222;border-radius:6px;overflow:hidden\">';\n        html += '<div style=\"display:flex;justify-content:space-between;padding:6px 8px;background:#111;color:#aaa;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">';\n        html += '<span>' + dateStr + ' - ' + retailer + '</span>';\n        html += '<span>Import $: $' + (summary.impCost || 0).toFixed(2) + ' | Export $: $' + (summary.expCredit || 0).toFixed(2) + ' | DSC: $' + (summary.dsc || 0).toFixed(2) + ' | Rebate: $' + (summary.rebate || 0).toFixed(2) + ' | Net: $' + (summary.netTotal || 0).toFixed(2) + '</span>';\n        html += '</div>';\n        html += '<div style=\"overflow-x:auto;overflow-y:auto;max-height:400px\">';\n        html += '<table style=\"width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed\">';\n        html += '<thead><tr style=\"background:#1a1a1a;color:white;position:sticky;top:0;z-index:1\">';\n        html += '<th style=\"padding:2px 4px;text-align:left;min-width:50px\">Time</th><th style=\"padding:2px 4px;text-align:left;min-width:40px\">TOU</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Imp kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Exp kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:70px\">Imp $/kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:70px\">Exp $/kWh</th><th style=\"padding:2px 4px;text-align:right;min-width:55px\">AEMO $</th><th style=\"padding:2px 4px;text-align:right;min-width:55px\">NW $</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Imp $</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Exp $</th><th style=\"padding:2px 4px;text-align:right;min-width:60px\">Net $</th>';\n        html += '</tr></thead><tbody>';\n        intervals.forEach(r => {\n            const net = r.impCost - r.expCredit;\n            const touColor = r.touPeriod === 'Offpeak' ? '#4fc3f7' : r.touPeriod === 'Peak' ? '#ff8a65' : '#ccc';\n            const touBg = r.touPeriod === 'Offpeak' ? 'background:#001a2e;' : r.touPeriod === 'Peak' ? 'background:#2e0d00;' : '';\n            html += '<tr style=\"' + touBg + '\">';\n            html += '<td style=\"padding:1px 4px;color:#aaa\">' + r.time + '</td>';\n            html += '<td style=\"padding:1px 4px;color:' + touColor + '\">' + r.touPeriod.substring(0, 3) + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#8cf\">' + (r.impKwh !== '' ? r.impKwh.toFixed(3) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#fc8\">' + (r.expKwh !== '' ? r.expKwh.toFixed(3) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#888\">' + (r.impRate !== '' ? r.impRate.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#888\">' + (r.expRate !== '' ? r.expRate.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#7cb342\">' + (typeof r.aemoPrice === 'number' ? r.aemoPrice.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#7cb342\">' + (typeof r.nwCost === 'number' ? r.nwCost.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#ff8a65\">' + (r.impCost !== '' ? r.impCost.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">' + (r.expCredit !== '' ? r.expCredit.toFixed(4) : '') + '</td>';\n            html += '<td style=\"padding:1px 4px;text-align:right;color:' + (net < 0 ? '#4CAF50' : net > 0 ? '#ff5252' : '#aaa') + '\">' + (typeof net === 'number' ? net.toFixed(4) : '') + '</td>';\n            html += '</tr>';\n        });\n        html += '</tbody></table></div></div>';\n    });\n    sendJSON({ html, availableRetailers, allDates, selectedRetailer: retailer, from: fromDate, to: toDate });\n} catch(e) {\n    msg.payload = JSON.stringify({ html: '<div style=\"color:#f55;padding:20px;text-align:center\">Error: ' + e.message + '</div>' });\n    msg.statusCode = 200;\n    msg.headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };\n    node.send(msg);\n}",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "x": 440,
+    "y": 740,
+    "wires": [
+      [
+        "http_response"
+      ]
+    ]
+  },
+  {
+    "id": "http_response",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response",
+    "x": 700,
+    "y": 740,
+    "wires": []
+  },
+  {
+    "id": "http_in_page",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET 5-min Detail Page",
+    "url": "/api/5min-detail-page",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 780,
+    "wires": [
+      [
+        "http_page_handler"
+      ]
+    ]
+  },
+  {
+    "id": "http_page_handler",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Serve 5-min HTML Page",
+    "func": "try {\n    var fiveMinDetail = flow.get('fiveMinDetail');\n    var retailers = fiveMinDetail ? Object.keys(fiveMinDetail) : [];\n    var allDates = fiveMinDetail ? [...new Set(Object.values(fiveMinDetail).flatMap(function(r){return Object.keys(r)}))].sort() : [];\n    var query = msg.req.query || {};\n    var retailer = query.retailer || (retailers.length > 0 ? retailers[0] : '');\n    var fromDate = query.from || (allDates.length > 0 ? allDates[Math.max(0, allDates.length - 8)] : '');\n    var toDate = query.to || (allDates.length > 0 ? allDates[allDates.length - 1] : '');\n    var tableHtml = '<div style=\"color:#888;padding:20px;text-align:center\">Select a retailer and date range to load data.</div>';\n    if (retailer && fromDate && toDate && fiveMinDetail && fiveMinDetail[retailer]) {\n        var retailerData = fiveMinDetail[retailer];\n        var matchedDates = Object.keys(retailerData).filter(function(d){return d>=fromDate&&d<=toDate}).sort().reverse();\n        if (matchedDates.length > 0) {\n            tableHtml = '';\n            matchedDates.forEach(function(dateStr) {\n                var dayData = retailerData[dateStr];\n                if (!dayData || !dayData.intervals) return;\n                var intervals = dayData.intervals.filter(function(x){return x.time!=='TOTAL'}).reverse();\n                var summary = dayData.intervals[dayData.intervals.length - 1];\n                tableHtml += '<div style=\"margin-bottom:12px;border:1px solid #222;border-radius:6px\">';\n                tableHtml += '<div style=\"display:flex;justify-content:space-between;padding:6px 8px;background:#111;color:#aaa;font-size:11px;font-weight:bold;border-bottom:1px solid #222\">';\n                tableHtml += '<span>'+dateStr+' - '+retailer+'</span>';\n                tableHtml += '<span>Import $: $'+(summary.impCost||0).toFixed(2)+' | Export $: $'+(summary.expCredit||0).toFixed(2)+' | DSC: $'+(summary.dsc||0).toFixed(2)+' | Rebate: $'+(summary.rebate||0).toFixed(2)+' | Net: $'+(summary.netTotal||0).toFixed(2)+'</span>';\n                tableHtml += '</div>';\n                tableHtml += '<div>';\n                tableHtml += '<table style=\"width:100%;border-collapse:separate;font-size:10px;table-layout:fixed\">';\n                tableHtml += '<div class=\"gheader\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 55px 55px 60px 60px 60px;background:#1a1a1a;color:white;position:sticky;top:0;z-index:2;font-size:10px;border-bottom:1px solid #333\">';\n                tableHtml += '<div style=\"padding:2px 4px;text-align:left\">Time</div><div style=\"padding:2px 4px;text-align:left\">TOU</div><div style=\"padding:2px 4px;text-align:right\">Imp kWh</div><div style=\"padding:2px 4px;text-align:right\">Exp kWh</div><div style=\"padding:2px 4px;text-align:right\">Imp $/kWh</div><div style=\"padding:2px 4px;text-align:right\">Exp $/kWh</div><div style=\"padding:2px 4px;text-align:right\">AEMO $</div><div style=\"padding:2px 4px;text-align:right\">NW $</div><div style=\"padding:2px 4px;text-align:right\">Imp $</div><div style=\"padding:2px 4px;text-align:right\">Exp $</div><div style=\"padding:2px 4px;text-align:right\">Net $</div>';\n                tableHtml += '</div>';  // close gheader\n                var totalImp = 0, totalExp = 0;\n                    var totalRow = dayData.intervals.filter(function(x){return x.time==='TOTAL'})[0] || {};\n                    intervals.forEach(function(r) {\n                    var net = r.impCost - r.expCredit;\n                    var touColor = r.touPeriod === 'Offpeak' ? '#4fc3f7' : r.touPeriod === 'Peak' ? '#ff8a65' : '#ccc';\n                    var touBg = r.touPeriod === 'Offpeak' ? 'background:#001a2e;' : r.touPeriod === 'Peak' ? 'background:#2e0d00;' : '';\n                    tableHtml += '<div class=\"grow\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 55px 55px 60px 60px 60px;'+touBg+'\">';\n                    tableHtml += '<div style=\"padding:1px 4px;color:#aaa\">'+r.time+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;color:'+touColor+'\">'+r.touPeriod.substring(0,3)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8cf\">'+(r.impKwh!==''?r.impKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#fc8\">'+(r.expKwh!==''?r.expKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#888\">'+(r.impRate!==''?r.impRate.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#888\">'+(r.expRate!==''?r.expRate.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#7cb342\">'+(typeof r.aemoPrice==='number'?r.aemoPrice.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#7cb342\">'+(typeof r.nwCost==='number'?r.nwCost.toFixed(4):'')+'</div>';\n                    totalImp += typeof r.impCost === 'number' ? r.impCost : 0;\n                    totalExp += typeof r.expCredit === 'number' ? r.expCredit : 0;\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#ff8a65\">'+(r.impCost!==''?r.impCost.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">'+(r.expCredit!==''?r.expCredit.toFixed(4):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:'+(net<0?'#4CAF50':net>0?'#ff5252':'#aaa')+'\">'+(typeof net==='number'?net.toFixed(4):'')+'</div>';\n                    tableHtml += '</div>';  // close grow\n                });\n                    totalImp = typeof totalRow.impCost === 'number' ? totalRow.impCost : totalImp;\n                    totalExp = typeof totalRow.expCredit === 'number' ? totalRow.expCredit : totalExp;\n                    var totalNet = totalImp - totalExp;\n                    tableHtml += '<div class=\"grow\" style=\"display:grid;grid-template-columns:50px 40px 60px 60px 70px 70px 55px 55px 60px 60px 60px;background:#1a1a1a;border-top:1px solid #555;font-weight:bold\">';\n                    tableHtml += '<div style=\"padding:1px 4px;color:#ccc\">TOTAL</div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8cf\">'+(typeof totalRow.impKwh==='number'?totalRow.impKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#fc8\">'+(typeof totalRow.expKwh==='number'?totalRow.expKwh.toFixed(3):'')+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px\"></div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#ff8a65\">'+totalImp.toFixed(4)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:#8fbc8f\">'+totalExp.toFixed(4)+'</div>';\n                    tableHtml += '<div style=\"padding:1px 4px;text-align:right;color:'+(totalNet<0?'#4CAF50':totalNet>0?'#ff5252':'#aaa')+'\">'+totalNet.toFixed(4)+'</div>';\n                    tableHtml += '</div>';  // close total row\n                tableHtml += '</div>';  // close day-section\n            });\n        }\n    }\n    var optionsHtml = '<option value=\"\">-- Select Retailer --</option>';\n    retailers.forEach(function(r) {\n        var sel = r === retailer ? ' selected' : '';\n        optionsHtml += '<option value=\"'+r+'\"'+sel+'>'+r+'</option>';\n    });\n    msg.payload = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">';\n    msg.payload += '<style>body{margin:0;padding:8px;background:#000;color:#eee;font-family:monospace;font-size:13px}';\n    msg.payload += 'select,input{padding:6px 10px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;font-family:monospace;font-size:12px}';\n    msg.payload += 'select option{background:#222;color:#eee}';\n    msg.payload += 'select:focus,input:focus{outline:none;border-color:#4CAF50}';\n    msg.payload += 'button{padding:6px 14px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px}';\n    msg.payload += 'button:hover{background:#45a049}</style></head><body style=\"display:flex;flex-direction:column;height:100vh;margin:0;padding:8px;box-sizing:border-box;\">';\n    msg.payload += '<form method=\"GET\" style=\"display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px\">';\n    msg.payload += '<select name=\"retailer\" style=\"min-width:160px\" onchange=\"this.form.submit()\">'+optionsHtml+'</select>';\n    msg.payload += '<input type=\"date\" name=\"from\" value=\"'+fromDate+'\" onchange=\"this.form.submit()\">';\n    msg.payload += '<input type=\"date\" name=\"to\" value=\"'+toDate+'\" onchange=\"this.form.submit()\">';\n    msg.payload += '<noscript><button type=\"submit\">Load</button></noscript></form>';\n    msg.payload += '<div style=\"flex:1;overflow-y:auto;background:#000;border-radius:6px;font-family:monospace;font-size:10px;color:white;border-top:1px solid #333\">';\n    msg.payload += tableHtml;\n    msg.payload += '</div></body></html>';\n    msg.statusCode = 200;\n    msg.headers = { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' };\n    node.send(msg);\n} catch(e) {\n    msg.payload = 'Error: '+e.message;\n    msg.statusCode = 500;\n    msg.headers = { 'Content-Type': 'text/plain' };\n    node.send(msg);\n}",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 450,
+    "y": 780,
+    "wires": [
+      [
+        "http_response_page"
+      ]
+    ]
+  },
+  {
+    "id": "http_response_page",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response (Page)",
+    "x": 730,
+    "y": 780,
+    "wires": []
+  },
+  {
+    "id": "ha_rest_api_delete",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "DELETE Stale Sensor",
+    "method": "DELETE",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 800,
+    "y": 460,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "build_monthly_summary",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build Monthly Summary",
+    "func": "const dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\n\nfunction getSeason(m) {\n    if (m >= 12 || m <= 2) return 'Summer';\n    if (m >= 3 && m <= 5) return 'Autumn';\n    if (m >= 6 && m <= 8) return 'Winter';\n    return 'Spring';\n}\n\nconst monthGroups = {};\nObject.keys(dailySummary).forEach(day => {\n    const mk = day.substring(0, 7);\n    if (!monthGroups[mk]) monthGroups[mk] = {};\n    monthGroups[mk][day] = dailySummary[day];\n});\n\nconst monthKeys = Object.keys(monthGroups).sort().reverse();\nconst rNames = retailers.map(r => r.name);\n\nlet html = '<div style=\"max-height:400px;overflow-y:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index:1\">';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:90px\">Month</th>';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:55px\">Season</th>';\nrNames.forEach(name => { html += '<th style=\"padding:4px;text-align:right\">' + name + '</th>'; });\nhtml += '<th style=\"padding:4px;text-align:right;color:#4CAF50;min-width:100px\">Cheapest</th></tr></thead><tbody>';\n\nmonthKeys.forEach((mk, idx) => {\n    const days = monthGroups[mk];\n    const monthNum = parseInt(mk.substring(5, 7));\n    const season = getSeason(monthNum);\n    const bg = idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;';\n    let cheapestMonth = '', cheapestMonthVal = Infinity;\n    rNames.forEach(name => {\n        let total = 0;\n        Object.keys(days).forEach(day => { total += days[day].retailers[name].net; });\n        if (total < cheapestMonthVal) { cheapestMonthVal = total; cheapestMonth = name; }\n    });\n    // Get PEA from last day in this month (same billing period)\n    const monthDays = Object.keys(days).sort();\n    const lastDay = monthDays[monthDays.length - 1];\n    const monthPea = days[lastDay].pea || 0;\n    html += '<tr style=\"' + bg + '\">';\n    html += '<td style=\"padding:4px;text-align:left;color:#aaa\">' + mk + '</td>';\n    html += '<td style=\"padding:4px;text-align:left;color:#888;font-size:10px\">' + season + '</td>';\n    rNames.forEach(name => {\n        let total = 0;\n        Object.keys(days).forEach(day => { total += days[day].retailers[name].net; });\n        const c = name === cheapestMonth ? '#4CAF50' : 'white';\n        if (name === 'FlowPower') {\n            html += '<td style=\"padding:4px;text-align:right;color:' + c + '\">$' + total.toFixed(2) + ' <span style=\"font-size:9px;color:#888\">[PEA ' + monthPea.toFixed(4) + ']</span></td>';\n        } else {\n            html += '<td style=\"padding:4px;text-align:right;color:' + c + '\">$' + total.toFixed(2) + '</td>';\n        }\n    });\n    html += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + cheapestMonth + '</td></tr>';\n});\n\nhtml += '<tr style=\"background:#222;border-top:1px solid #555\"><td style=\"padding:4px;text-align:left;color:#aaa;font-weight:bold\">Total</td><td style=\"padding:4px\"></td>';\nlet cheapestTotal = '', cheapestTotalVal = Infinity;\nrNames.forEach(name => {\n    let total = 0;\n    monthKeys.forEach(m => { Object.keys(monthGroups[m]).forEach(day => { total += dailySummary[day].retailers[name].net; }); });\n    if (total < cheapestTotalVal) { cheapestTotalVal = total; cheapestTotal = name; }\n});\n// Calculate average PEA across all days\nconst allDays = Object.keys(dailySummary).sort();\nlet peaSum = 0, peaCount = 0;\nallDays.forEach(day => {\n    const p = dailySummary[day].pea || 0;\n    if (p !== 0) { peaSum += p; peaCount++; }\n});\nconst currentPea = peaCount > 0 ? peaSum / peaCount : 0;\nrNames.forEach(name => {\n    let total = 0;\n    monthKeys.forEach(m => { Object.keys(monthGroups[m]).forEach(day => { total += dailySummary[day].retailers[name].net; }); });\n    const c = name === cheapestTotal ? '#4CAF50' : 'white';\n    if (name === 'FlowPower') {\n        html += '<td style=\"padding:4px;text-align:right;color:' + c + ';font-weight:bold\">$' + total.toFixed(2) + ' <span style=\"font-size:9px;color:#888;font-weight:normal\">[PEA ' + currentPea.toFixed(4) + ']</span></td>';\n    } else {\n        html += '<td style=\"padding:4px;text-align:right;color:' + c + ';font-weight:bold\">$' + total.toFixed(2) + '</td>';\n    }\n});\nhtml += '<td style=\"padding:4px;text-align:right;color:#4CAF50;font-weight:bold\">' + cheapestTotal + '</td></tr>';\nhtml += '</tbody></table></div>';\n\nconst attrs = {\n    friendly_name: 'Monthly Cost Summary',\n    icon: 'mdi:calendar-month',\n    months: monthKeys.length,\n    pea_current: currentPea.toFixed(6),\n    html: html\n};\nrNames.forEach(name => {\n    let total = 0;\n    monthKeys.forEach(m => { Object.keys(monthGroups[m]).forEach(day => { total += dailySummary[day].retailers[name].net; }); });\n    attrs[name.toLowerCase().replace(/\\s+/g, '_') + '_total'] = Math.round(total * 100) / 100;\n});\nnode.send({\n    payload: JSON.stringify({ state: cheapestTotal + ' $' + cheapestTotalVal.toFixed(2), attributes: attrs }),\n    url: haUrl + '/api/states/sensor.retailer_monthly_summary',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 460,
+    "wires": [
+      [
+        "ha_rest_api_monthly"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_monthly",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Monthly Summary to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 700,
+    "y": 460,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "build_seasonal_report",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build Seasonal Report",
+    "func": "const dailySummary = msg.payload.dailySummary;\nconst retailers = msg.payload.retailers;\nif (!dailySummary || Object.keys(dailySummary).length === 0) { return null; }\n\nfunction getSeason(m) {\n    if (m === 12 || m <= 2) return 'Summer';\n    if (m >= 3 && m <= 5) return 'Autumn';\n    if (m >= 6 && m <= 8) return 'Winter';\n    return 'Spring';\n}\n\nconst seasons = { 'Summer': {}, 'Autumn': {}, 'Winter': {}, 'Spring': {} };\nObject.keys(dailySummary).forEach(day => {\n    const m = parseInt(day.substring(5, 7));\n    const season = getSeason(m);\n    seasons[season][day] = dailySummary[day];\n});\n\nconst rNames = retailers.map(r => r.name);\n\nconst seasonTotals = {};\nObject.keys(seasons).forEach(season => {\n    seasonTotals[season] = {};\n    rNames.forEach(name => {\n        let total = 0;\n        Object.keys(seasons[season]).forEach(day => {\n            total += seasons[season][day].retailers[name].net;\n        });\n        seasonTotals[season][name] = Math.round(total * 100) / 100;\n    });\n});\n\nconst yearlyTotals = {};\nrNames.forEach(name => {\n    let total = 0;\n    Object.keys(seasons).forEach(season => { total += seasonTotals[season][name]; });\n    yearlyTotals[name] = Math.round(total * 100) / 100;\n});\n\nconst monthlyTotals = {};\nrNames.forEach(name => {\n    monthlyTotals[name] = Math.round(yearlyTotals[name] / 12 * 100) / 100;\n});\n\nconst seasonOrder = ['Summer', 'Autumn', 'Winter', 'Spring'];\n\nfunction cheapestOf(obj) {\n    let min = Infinity, best = null;\n    rNames.forEach(n => { if (obj[n] < min) { min = obj[n]; best = n; } });\n    return best;\n}\nconst cheapestYearly = cheapestOf(yearlyTotals);\nconst cheapestMonthly = cheapestOf(monthlyTotals);\nconst cheapestSeason = {};\nseasonOrder.forEach(s => { cheapestSeason[s] = cheapestOf(seasonTotals[s]); });\n\nlet html = '<div style=\"max-height:400px;overflow-y:auto;border:1px solid #333;border-radius:4px\">';\nhtml += '<table style=\"width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed\">';\nhtml += '<thead><tr style=\"background:#333;color:white;position:sticky;top:0;z-index:1\">';\nhtml += '<th style=\"padding:4px;text-align:left;min-width:140px\">Totals</th>';\nhtml += '<th style=\"padding:4px;text-align:right\">Yearly</th>';\nhtml += '<th style=\"padding:4px;text-align:right\">Monthly</th>';\nseasonOrder.forEach(s => {\n    html += '<th style=\"padding:4px;text-align:right\">' + s + '</th>';\n});\nhtml += '<th style=\"padding:4px;text-align:center\">Best</th>';\nhtml += '</tr></thead><tbody>';\n\nrNames.forEach((name, idx) => {\n    const bg = idx % 2 === 0 ? 'background:#111;' : 'background:#1a1a1a;';\n    const yv = yearlyTotals[name], mv = monthlyTotals[name];\n    html += '<tr style=\"' + bg + '\">';\n    html += '<td style=\"padding:4px;text-align:left;color:#aaa\">' + name + '</td>';\n    html += '<td style=\"padding:4px;text-align:right;color:' + (name === cheapestYearly ? '#4CAF50' : 'white') + '\">' + (yv < 0 ? '' : '+') + '$' + yv.toFixed(2) + '</td>';\n    html += '<td style=\"padding:4px;text-align:right;color:' + (name === cheapestMonthly ? '#4CAF50' : 'white') + '\">' + (mv < 0 ? '' : '+') + '$' + mv.toFixed(2) + '</td>';\n    seasonOrder.forEach(s => {\n        const sv = seasonTotals[s][name];\n        html += '<td style=\"padding:4px;text-align:right;color:' + (name === cheapestSeason[s] ? '#4CAF50' : 'white') + '\">' + (sv < 0 ? '' : '+') + '$' + sv.toFixed(2) + '</td>';\n    });\n    html += '<td style=\"padding:4px;text-align:center;color:#4CAF50;font-weight:bold\">' + (name === cheapestYearly ? '\u2713' : '') + '</td>';\n    html += '</tr>';\n});\nhtml += '</tbody></table></div>';\n\nconst dataRows = [];\nrNames.forEach(name => {\n    const row = { retailer: name, yearly: yearlyTotals[name], monthly: monthlyTotals[name] };\n    seasonOrder.forEach(s => row[s.toLowerCase()] = seasonTotals[s][name]);\n    dataRows.push(row);\n});\n\nconst haUrl = global.get('ha_url');\nconst haToken = global.get('ha_token');\nconst authHeader = 'Bearer ' + haToken;\n\nnode.send({\n    payload: JSON.stringify({\n        state: 'Seasonal Report',\n        attributes: {\n            friendly_name: 'Retailer Seasonal Report',\n            icon: 'mdi:calendar-month',\n            unit_of_measurement: '$',\n            html: html,\n            data: dataRows\n        }\n    }),\n    url: haUrl + '/api/states/sensor.retailer_seasonal_report',\n    headers: { Authorization: authHeader }\n});",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 620,
+    "wires": [
+      [
+        "ha_rest_api_seasonal"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_seasonal",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Seasonal Report to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 700,
+    "y": 620,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "read_retailer_config_1",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read Retailer Config",
+    "filename": "/share/retailer_config.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": false,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 290,
+    "y": 180,
+    "wires": [
+      [
+        "bridge_8bfe8888"
+      ]
+    ]
+  },
+  {
+    "id": "fallback_config_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Fallback Config",
+    "func": "// Track if we've loaded config from file\nvar fromFile = msg._fromFile === true;\nvar retailers = flow.get('retailers');\nvar hasRetailers = retailers && retailers.length > 0;\n\n// If coming from the startup template and we already have retailers from file, skip\nif (!fromFile && hasRetailers) {\n    return null;\n}\n\n// Validate payload\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') { msg.payload = msg.payload.toString('utf8'); }\nif (!msg.payload || typeof msg.payload !== 'string' || msg.payload.trim().length < 10) {\n    return null;\n}\nvar lines = msg.payload.trim().split(String.fromCharCode(10));\nif (lines.length < 2) { return null; }\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 180,
+    "wires": [
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "after_save_config_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Confirm Save",
+    "func": "// File was written. Now update flow context and confirm.\nvar csvContent = msg.payload;\nmsg._config_csv = csvContent;  // store for next node\n\n// Return success response\nvar response = {\n    payload: 'OK\\n',\n    statusCode: 200,\n    headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }\n};\nnode.send([response, msg]);",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 720,
+    "y": 900,
+    "wires": [
+      [],
+      [
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "http_retailer_post_1",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Retailer Config",
+    "url": "/api/retailer-config/save",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 380,
+    "y": 900,
+    "wires": [
+      [
+        "save_config_handler_1"
+      ]
+    ]
+  },
+  {
+    "id": "save_config_handler_1",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Save Config",
+    "func": "// Build CSV from posted form data, skip deleted rows, auto-derive hidden fields\nvar body = msg.req.body || {};\nvar existingRetailers = flow.get('retailers') || [];\n\nvar origHeaders = (body.headers || '').split(',');\nvar rowCount = parseInt(body.rowCount) || 0;\nvar deleteRows = (body.deleteRows || '').split(',').filter(function(x){return x.length>0;});\n// Fallback: check for del_* fields from standard form POST\nif (deleteRows.length === 0) {\n    Object.keys(body).forEach(function(k) {\n        if (k.indexOf('del_') === 0) {\n            var idx = k.replace('del_', '');\n            if (idx) deleteRows.push(idx);\n        }\n    });\n}\n\n// Full CSV header includes hidden fields\nvar fullCsvHeader = 'name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day';\n\nvar csvLines = [fullCsvHeader];\nvar fullHeaders = fullCsvHeader.split(',');\n\nfor (var i = 1; i <= rowCount; i++) {\n    if (deleteRows.indexOf(String(i)) >= 0) continue;\n    var row = [];\n    for (var j = 0; j < fullHeaders.length; j++) {\n        var hdr = fullHeaders[j].trim();\n        var val = body[hdr + '_' + i];\n        if (val !== undefined && val.trim() !== '') {\n            row.push(val.trim());\n        } else if (hdr === 'name' && existingRetailers[i-1]) {\n            row.push(existingRetailers[i-1].name);\n        } else {\n            row.push(j === 0 ? '' : '0');\n        }\n    }\n\n    // Auto-derive hidden fields from visible fields\n        var model = body['model_' + i] || '';\n\n    // Find indices in fullCsvHeader\n        var evSIdx = fullHeaders.indexOf('ev_s');\n    var evEIdx = fullHeaders.indexOf('ev_e');\n    var evPkIdx = fullHeaders.indexOf('ev_pk');\n\n    // For hybrid model: FIT windows default to TOU windows\n    if (model === 'hybrid') {\n        }\n\n    // For fixed_tou: ev = off-peak window\n    if (model === 'fixed_tou') {\n        var offSIdx = fullHeaders.indexOf('off_s');\n        var offEIdx = fullHeaders.indexOf('off_e');\n        var offPkIdx = fullHeaders.indexOf('off_pk');\n        row[evSIdx] = row[offSIdx] || '0';\n        row[evEIdx] = row[offEIdx] || '0';\n        row[evPkIdx] = row[offPkIdx] || '0';\n    }\n\n    csvLines.push(row.join(','));\n}\n\nvar csvContent = csvLines.join(String.fromCharCode(10));\nmsg.payload = csvContent;\nflow.set('debug_lastCsv', csvContent);\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 900,
+    "wires": [
+      [
+        "write_retailer_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "write_retailer_config_1",
+    "type": "file",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Write Config File",
+    "filename": "/share/retailer_config.csv",
+    "filenameType": "str",
+    "appendNewline": true,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 560,
+    "y": 900,
+    "wires": [
+      [
+        "save_redirect_handler",
+        "store_config"
+      ]
+    ]
+  },
+  {
+    "id": "http_config_post_response_1",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response (Save)",
+    "x": 900,
+    "y": 900,
+    "wires": []
+  },
+  {
+    "id": "http_retailer_get_5638d1cf",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET Retailer Config",
+    "url": "/api/retailer-editor",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 860,
+    "wires": [
+      [
+        "serve_config_page_74a84a79"
+      ]
+    ]
+  },
+  {
+    "id": "serve_config_page_74a84a79",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Serve Config Page",
+    "func": "// Serve editable config page\nvar NL = String.fromCharCode(10);\nvar retailers = flow.get('retailers');\nvar csvContent = (typeof msg.payload === 'string' && msg.payload.length > 10) ? msg.payload : '';\nif (!csvContent && retailers && retailers.length > 0) {\n    var csvHeaders = Object.keys(retailers[0]).filter(function(k){ return k !== 'sensor_id'; });\n    var csvRows = [];\n    for (var ri = 0; ri < retailers.length; ri++) {\n        var rowVals = [];\n        for (var hi = 0; hi < csvHeaders.length; hi++) {\n            var cell = retailers[ri][csvHeaders[hi]];\n            rowVals.push(cell !== undefined ? cell : '');\n        }\n        csvRows.push(rowVals.join(','));\n    }\n    csvContent = csvHeaders.join(',') + NL + csvRows.join(NL);\n}\nif (!csvContent || csvContent.length < 10) {\n    csvContent = [\n        'name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day',\n        'FlowPower,hybrid,1.3419,0,0.33998,0.33998,0.33998,0,0,0,0.45,0,0,0,0,0,17.5,19.5,17.5,19.5,17.5,19.5,17.5,19.5,17.5,19.5,18,0,0,0,0,4',\n        'Origin Loop Max,fixed_tou,1.2567,0,0.187,0.187,0.539,0.05,0.05,0.22,0,0,0,0,17,21,0,0,17,21,17,21,17,21,0,0,0,0,0,0,0,4',\n        'Globird VPP,fixed_tou,1.32,0,0,0.363,0.495,0,0,0.05,0.15,15,11,14,16,23,18,21,16,23,16,23,16,23,18,21,0,0,0,0,0,4',\n        'CovaU SolarMax,fixed_tou,1.1818,0,0,0.2547,0.5581,0.05,0.05,0.05,0.18,0,11,14,17,21,17,21,17,21,17,21,17,21,17,21,0,0,6,0.15,24,4',\n        'Amber,variable,1.76,25,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.05,0,0,0,0,4'\n    ].join(NL);\n}\nvar lines = csvContent.split(NL);\nvar headers = lines[0].split(',');\nvar hiddenFields = ['ev_s', 'ev_e', 'ev_pk'];\nvar displayNames = {};\ndisplayNames['off_pk'] = 'Off TOU<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['sh_pk'] = 'Shld TOU<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['pk_pk'] = 'Peak TOU<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['off_fit'] = 'Off FIT<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['sh_fit'] = 'Shld FIT<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['pk_fit'] = 'Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['sp_fit'] = 'S/Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">Rate</span>';\ndisplayNames['sp_limit'] = 'S/Peak Limit<br><span style=\"font-size:9px;font-weight:normal\">kWh</span>';\ndisplayNames['off_s'] = 'Off Start';\ndisplayNames['off_e'] = 'Off End';\ndisplayNames['pk_s'] = 'Peak Start';\ndisplayNames['pk_e'] = 'Peak End';\ndisplayNames['sp_s'] = 'S/Peak Start';\ndisplayNames['sp_e'] = 'S/Peak End';\ndisplayNames['off_fit_s'] = 'Off FIT<br><span style=\"font-size:9px;font-weight:normal\">Start</span>';\ndisplayNames['off_fit_e'] = 'Off FIT<br><span style=\"font-size:9px;font-weight:normal\">End</span>';\ndisplayNames['sh_fit_s'] = 'Shld FIT<br><span style=\"font-size:9px;font-weight:normal\">Start</span>';\ndisplayNames['sh_fit_e'] = 'Shld FIT<br><span style=\"font-size:9px;font-weight:normal\">End</span>';\ndisplayNames['pk_fit_s'] = 'Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">Start</span>';\ndisplayNames['pk_fit_e'] = 'Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">End</span>';\ndisplayNames['sp_fit_s'] = 'S/Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">Start</span>';\ndisplayNames['sp_fit_e'] = 'S/Peak FIT<br><span style=\"font-size:9px;font-weight:normal\">End</span>';\ndisplayNames['fixed_export'] = 'Fixed Export<br><span style=\"font-size:9px;font-weight:normal\">kWh</span>';\ndisplayNames['ev_s'] = 'EV Start';\ndisplayNames['ev_e'] = 'EV End';\ndisplayNames['ev_pk'] = 'EV Rate';\ndisplayNames['off_limit'] = 'Free Limit<br><span style=\"font-size:9px;font-weight:normal\">kWh</span>';\ndisplayNames['billing_day'] = 'Billing Start<br><span style=\"font-size:9px;font-weight:normal\">Day of Month</span>';\n\nvar html = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">';\nhtml += '<link rel=\"icon\" href=\"data:,\">';\nhtml += '<style>body{margin:12px;background:#111;color:#eee;font-family:monospace;font-size:12px}';\nhtml += 'h2{color:#4CAF50;margin:16px 0 8px}';\nhtml += 'table{width:100%;border-collapse:collapse;margin-bottom:20px}';\nhtml += 'th,td{padding:6px 8px;border:1px solid #333;text-align:left;min-width:60px}';\nhtml += 'th{background:#222;color:#aaa;font-size:10px;white-space:nowrap;cursor:help;border-bottom:1px dotted #555}';\nhtml += 'td{background:#1a1a1a}';\nhtml += 'input[type=text],select{width:100%;box-sizing:border-box;padding:4px 6px;background:#000;color:#eee;border:1px solid #444;border-radius:3px;font-family:monospace;font-size:11px}';\nhtml += 'input[type=text]:focus,select:focus{outline:none;border-color:#4CAF50}';\nhtml += 'select option{background:#222;color:#eee}';\nhtml += 'input[type=checkbox]{width:14px;height:14px;cursor:pointer}';\nhtml += 'button{padding:10px 24px;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-family:monospace}';\nhtml += 'button:hover{opacity:0.85}';\nhtml += '#saveBtn{background:#4CAF50}';\nhtml += '#revertBtn:disabled{background:#555;cursor:not-allowed}';\nhtml += '.header{color:#888;font-size:10px;margin:4px 0 12px}';\nhtml += '.success{color:#4CAF50;padding:10px;background:#0a2a0a;border:1px solid #4CAF50;border-radius:4px;margin-bottom:12px;display:none}';\nhtml += '.del-row{background:#1a0d0d !important}';\nhtml += 'th.del{width:40px;text-align:center;cursor:default}';\nhtml += 'td.del{text-align:center}';\nhtml += '</style></head><body>';\nhtml += '<h2>Retailer Configuration</h2>';\nvar debugRetailers = flow.get('retailers');\nif (debugRetailers && debugRetailers.length > 0) {\n    html += '<div style=\"font-size:10px;color:#666;margin-bottom:8px\">Retailers loaded: ' + debugRetailers.map(function(r){return r.name + '=' + r.fixed_export}).join(', ') + '</div>';\n} else {\n    html += '<div style=\"font-size:10px;color:#666;margin-bottom:8px\">No retailers in flow variable</div>';\n}\nhtml += '<div class=\"header\">Edit retailer rates and TOU periods. Changes take effect on the next 5-min cycle.</div>';\nhtml += '<div id=\"success\" class=\"success\">Saved successfully</div>';\nhtml += '<form id=\"configForm\" action=\"/endpoint/api/retailer-config/save\" method=\"POST\">';\nhtml += '<div style=\"overflow-x:auto\"><table><thead><tr>';\nfor (var h = 0; h < headers.length; h++) {\n    if (hiddenFields.indexOf(headers[h].trim()) >= 0) continue;\n    var hdrName = headers[h].trim();\n    var helpText = {\n        'name': 'Retailer name (read-only identifier)',\n        'model': 'Pricing model: fixed_tou = TOU rates, hybrid = FlowPower blended, variable = wholesale-linked',\n        'dsc': 'Daily supply charge ($/day)',\n        'sub': 'Monthly subscription fee ($/month)',\n        'off_pk': 'Off-peak import rate ($/kWh)',\n        'sh_pk': 'Shoulder import rate ($/kWh)',\n        'pk_pk': 'Peak import rate ($/kWh)',\n        'off_fit': 'Off-peak feed-in tariff ($/kWh)',\n        'sh_fit': 'Shoulder feed-in tariff ($/kWh)',\n        'pk_fit': 'Peak feed-in tariff ($/kWh)',\n        'sp_fit': 'Super peak feed-in tariff ($/kWh)',\n        'sp_limit': 'Super peak daily export limit before fallback to peak FIT (kWh)',\n        'off_s': 'Off-peak window start hour (0-24, e.g. 11 = 11:00)',\n        'off_e': 'Off-peak window end hour (0-24)',\n        'pk_s': 'Peak window start hour',\n        'pk_e': 'Peak window end hour',\n        'sp_s': 'Super peak window start hour',\n        'sp_e': 'Super peak window end hour',\n        'fixed_export': 'Hybrid only: fixed export during FIT window (kWh). 0 = use actual export',\n        'off_fit_s': 'Off-peak FIT window start hour',\n        'off_fit_e': 'Off-peak FIT window end hour',\n        'sh_fit_s': 'Shoulder FIT window start hour',\n        'sh_fit_e': 'Shoulder FIT window end hour',\n        'pk_fit_s': 'Peak FIT window start hour',\n        'pk_fit_e': 'Peak FIT window end hour',\n        'sp_fit_s': 'Super peak FIT window start hour',\n        'sp_fit_e': 'Super peak FIT window end hour',\n        'off_limit': 'Free import daily cap (kWh) excess charged at shoulder rate',\n        'billing_day': 'Billing cycle start day of month (1-28). Default 4.'\n    }[hdrName] || '';\n    html += '<th title=\"' + helpText + '\">' + (displayNames[hdrName] || hdrName) + '</th>';\n}\nhtml += '<th class=\"del\" title=\"Check to delete this retailer\">Del</th>';\nhtml += '</tr></thead><tbody>';\n\nfor (var i = 1; i < lines.length; i++) {\n    var row = lines[i].split(',');\n    if (row.length < headers.length) continue;\n    html += '<tr>';\n    for (var j = 0; j < headers.length; j++) {\n        if (hiddenFields.indexOf(headers[j].trim()) >= 0) continue;\n        var val = (row[j] || '').trim();\n        var hdr = headers[j].trim();\n        if (j === 0) {\n            html += '<td style=\"color:#888\">' + val + '</td>';\n        } else {\n            if (hdr === 'model') {\n                var opts = ['fixed_tou', 'hybrid', 'variable'];\n                html += '<td style=\"min-width:100px\"><select name=\"' + hdr + '_' + i + '\" style=\"min-width:90px\">';\n                for (var oi = 0; oi < opts.length; oi++) {\n                    var o = opts[oi];\n                    html += '<option value=\"' + o + '\"' + (val === o ? ' selected' : '') + '>' + o + '</option>';\n                }\n                html += '</select></td>';\n            } else {\n                html += '<td><input type=\"text\" name=\"' + hdr + '_' + i + '\" value=\"' + val + '\"></td>';\n            }\n        }\n    }\n    html += '<td class=\"del\"><input type=\"checkbox\" class=\"del-check\" name=\"del_' + i + '\"></td>';\n    html += '</tr>';\n}\nhtml += '</tbody></table></div>';\nhtml += '<input type=\"hidden\" name=\"rowCount\" value=\"' + (lines.length - 1) + '\">';\nhtml += '<input type=\"hidden\" name=\"headers\" value=\"' + headers.join(',') + '\">';\nhtml += '<input type=\"hidden\" name=\"previousCsv\" id=\"previousCsv\">';\nhtml += '<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:20px\">';\nhtml += '<button id=\"saveBtn\" type=\"submit\">Save Configuration</button>';\nhtml += '<div style=\"display:flex;align-items:center;gap:8px\">';\nhtml += '<label style=\"display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#aaa;cursor:pointer\"><input type=\"checkbox\" id=\"confirmRevert\" style=\"width:13px;height:13px\">Revert</label>';\nhtml += '<button id=\"revertBtn\" type=\"button\" onclick=\"revertConfig()\" disabled style=\"padding:5px 12px;font-size:10px;background:#f44336;color:white;border:none;border-radius:3px;cursor:not-allowed\">Revert</button>';\nhtml += '</div></div>';\nhtml += '</form>';\nhtml += '<script>';\nhtml += '(function(){';\nhtml += '  var form = document.getElementById(\"configForm\");';\nhtml += '  /* Set initial backup */';\nhtml += '  if (!localStorage.getItem(\"retailerConfigBackup\")) {';\nhtml += '    var fd = new FormData(form);';\nhtml += '    for (var k of fd.keys()) { if (k.indexOf(\"del_\") === 0) fd.delete(k); }';\nhtml += '    localStorage.setItem(\"retailerConfigBackup\", new URLSearchParams(fd).toString());';\nhtml += '  }';\nhtml += '  /* Set previous backup if not present */';\nhtml += '  if (!localStorage.getItem(\"retailerPrevBackup\")) {';\nhtml += '    localStorage.setItem(\"retailerPrevBackup\", localStorage.getItem(\"retailerConfigBackup\"));';\nhtml += '  }';\nhtml += '  document.getElementById(\"previousCsv\").value = localStorage.getItem(\"retailerConfigBackup\") || \"\";';\nhtml += '  document.getElementById(\"confirmRevert\").addEventListener(\"change\", function() { document.getElementById(\"revertBtn\").disabled = !this.checked; });';\nhtml += '  form.addEventListener(\"submit\", function(e) {';\nhtml += '    /* Move current backup to prev, save current form as new backup */';\nhtml += '    var currentBackup = localStorage.getItem(\"retailerConfigBackup\");';\nhtml += '    if (currentBackup) localStorage.setItem(\"retailerPrevBackup\", currentBackup);';\nhtml += '    var fd = new FormData(form);';\nhtml += '    for (var k of fd.keys()) { if (k.indexOf(\"del_\") === 0) fd.delete(k); }';\nhtml += '    localStorage.setItem(\"retailerConfigBackup\", new URLSearchParams(fd).toString());';\nhtml += '  });';\nhtml += '})();';\nhtml += 'function revertConfig() { if (!document.getElementById(\"confirmRevert\").checked) { alert(\"Tick the checkbox first to confirm revert.\"); return; }';\nhtml += '  var backup = localStorage.getItem(\"retailerPrevBackup\") || localStorage.getItem(\"retailerConfigBackup\");';\nhtml += '  if (!backup) { alert(\"No previous config to revert to.\"); return; }';\nhtml += '  if (!confirm(\"Revert to previous configuration? Unsaved changes will be lost.\")) return;';\nhtml += '  fetch(\"/endpoint/api/retailer-config/save\", {method:\"POST\",headers:{\"Content-Type\":\"application/x-www-form-urlencoded\"},body:backup}).then(function(r) {';\nhtml += '    if (r.ok) { localStorage.removeItem(\"retailerConfigBackup\"); localStorage.removeItem(\"retailerPrevBackup\"); window.location.reload(); }';\nhtml += '    else { r.text().then(function(t) { alert(\"Revert failed: \" + t); }); }';\nhtml += '  });';\nhtml += '}';\nhtml += '</script>';\n\nhtml += '</body></html>';\nmsg.payload = html;\nmsg.statusCode = 200;\nmsg.headers = { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache, no-store, must-revalidate' };\nnode.send(msg);\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 860,
+    "wires": [
+      [
+        "http_config_response_d15e3232"
+      ]
+    ]
+  },
+  {
+    "id": "http_config_response_d15e3232",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HTTP Response (Config)",
+    "x": 560,
+    "y": 860,
+    "wires": []
+  },
+  {
+    "id": "inject_startup_1dd85974",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Startup Config",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "5",
+    "topic": "",
+    "x": 170,
+    "y": 200,
+    "wires": [
+      [
+        "retailer_config_template"
+      ]
+    ]
+  },
+  {
+    "id": "bridge_8bfe8888",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Mark From File",
+    "func": "msg._fromFile = true;\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 360,
+    "y": 180,
+    "wires": [
+      [
+        "fallback_config_1"
+      ]
+    ]
+  },
+  {
+    "id": "save_redirect_handler",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Redirect After Save",
+    "func": "msg.statusCode = 200;\nmsg.headers = { \"Content-Type\": \"text/html; charset=utf-8\" };\nmsg.payload = '<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0;url=/endpoint/api/retailer-editor?t=' + Date.now() + '\"></head><body>Saved. Redirecting...</body></html>';\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "x": 740,
+    "y": 900,
+    "wires": [
+      [
+        "http_config_post_response_1"
+      ]
+    ]
+  },
+  {
+    "id": "ha_rest_api_notify",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "POST Gap Alert to HA",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [
+      {
+        "keyType": "Authorization",
+        "keyValue": "",
+        "valueType": "msg",
+        "valueValue": "headers.Authorization"
+      },
+      {
+        "keyType": "Content-type",
+        "keyValue": "",
+        "valueType": "str",
+        "valueValue": "application/json"
+      }
+    ],
+    "x": 700,
+    "y": 220,
+    "wires": [
+      []
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "inject_aemo_history",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Fetch AEMO History",
+    "props": [],
+    "repeat": "3600",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "10",
+    "topic": "",
+    "x": 170,
+    "y": 240,
+    "wires": [
+      [
+        "build_aemo_history_url"
+      ]
+    ]
+  },
+  {
+    "id": "build_aemo_history_url",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Build AEMO History URL",
+    "func": "var now = new Date();\nvar yesterday = new Date(now);\nyesterday.setDate(yesterday.getDate() - 1);\nvar startTime = yesterday.toISOString().split('.')[0];\nvar endTime = now.toISOString().split('.')[0];\nmsg.url = global.get('ha_url') + '/api/history/period/' + startTime + '?filter_entity_id=sensor.aemo_nemweb_nsw1_realtime_price&end_time=' + endTime;\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': 'Bearer ' + global.get('ha_token'), 'Content-Type': 'application/json' };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 240,
+    "wires": [
+      [
+        "http_aemo_history"
+      ]
+    ]
+  },
+  {
+    "id": "http_aemo_history",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET AEMO History",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "x": 520,
+    "y": 240,
+    "wires": [
+      [
+        "process_aemo_history"
+      ]
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "process_aemo_history",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Process AEMO History",
+    "func": "var history = msg.payload;\nvar lookup = {};\nif (history && history[0] && Array.isArray(history[0])) {\n    history[0].forEach(function(entry) {\n        if (!entry.last_changed || entry.state === 'unavailable' || entry.state === 'unknown' || entry.state === 'null') return;\n        var dt = new Date(entry.last_changed);\n        var key = dt.getFullYear() + '-' +\n            String(dt.getMonth() + 1).padStart(2, '0') + '-' +\n            String(dt.getDate()).padStart(2, '0') + 'T' +\n            String(dt.getHours()).padStart(2, '0') + ':' +\n            String(dt.getMinutes()).padStart(2, '0');\n        lookup[key] = parseFloat(entry.state) || 0;\n    });\n}\nflow.set('aemoHistory', lookup);\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 700,
+    "y": 240,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "write_fixed_csv",
+    "type": "file",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Write Fixed 5min CSV",
+    "filename": "/share/file_notifications/5minelecNEW.csv",
+    "filenameType": "str",
+    "appendNewline": true,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 840,
+    "y": 260,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "write_csv_backup",
+    "type": "file",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Backup CSV Before Fix",
+    "filename": "filename",
+    "filenameType": "msg",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 700,
+    "y": 280,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "detect_gaps_for_ha",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Detect Gaps (HA)",
+    "func": "// Parse 5minelecNEW.csv and detect gaps that should be filled from HA cumulative energy sensors.\n// Handles normal same-day CSV gaps plus stale/trailing files across day boundaries.\nvar csvData = msg.payload;\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n    csvData = msg.payload;\n}\nif (typeof csvData !== 'string' || csvData.length < 100) return null;\n\nvar NL = String.fromCharCode(10);\nvar lines = csvData.split(NL);\nvar rawRows = [];\nvar now = new Date();\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart.substring(0,5) + ':00'); }\nfunction minsOfDay(d) { return d.getHours() * 60 + d.getMinutes(); }\n\nfor (var i = 1; i < lines.length; i++) {\n    var row = lines[i].split(',');\n    if (row.length < 14) continue;\n    var periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    var parts = periodEnding.split(' ');\n    if (parts.length < 2) continue;\n    var pd = parseLocal(parts[0], parts[1]);\n    if (isNaN(pd.getTime())) continue;\n    if ((pd - now) > 90 * 24 * 60 * 60 * 1000) continue;\n    rawRows.push({\n        lineIdx: i,\n        periodEnding: periodEnding,\n        dateStr: parts[0],\n        timeStr: parts[1].substring(0,5),\n        ts: pd.getTime(),\n        cumOff: parseFloat(row[1]) || 0,\n        cumSh: parseFloat(row[2]) || 0,\n        cumPk: parseFloat(row[3]) || 0,\n        cumExp: parseFloat(row[4]) || 0\n    });\n}\nrawRows.sort(function(a,b) { return a.ts - b.ts; });\n\nvar gaps = [];\nfor (var ri = 1; ri < rawRows.length; ri++) {\n    var prev = rawRows[ri - 1];\n    var curr = rawRows[ri];\n    var gapMin = Math.round((curr.ts - prev.ts) / 60000);\n    if (gapMin > 6) {\n        gaps.push({\n            date: prev.dateStr,\n            fromDate: prev.dateStr,\n            from: prev.timeStr,\n            fromMins: minsOfDay(new Date(prev.ts)),\n            fromTs: prev.ts,\n            toDate: curr.dateStr,\n            to: curr.timeStr,\n            toMins: minsOfDay(new Date(curr.ts)),\n            toTs: curr.ts,\n            gapMin: gapMin,\n            prevCumOff: prev.cumOff,\n            prevCumSh: prev.cumSh,\n            prevCumPk: prev.cumPk,\n            prevCumExp: prev.cumExp,\n            currCumOff: curr.cumOff,\n            currCumSh: curr.cumSh,\n            currCumPk: curr.cumPk,\n            currCumExp: curr.cumExp,\n            _crossDay: prev.dateStr !== curr.dateStr\n        });\n    }\n}\n\n// Check for trailing/stale gap from the last CSV row to the latest completed 5-minute boundary.\nif (rawRows.length > 0) {\n    var lastRow = rawRows[rawRows.length - 1];\n    var toNow = new Date(Math.floor(now.getTime() / (5 * 60000)) * (5 * 60000));\n    var trailingGapMin = Math.round((toNow.getTime() - lastRow.ts) / 60000);\n    if (trailingGapMin > 6) {\n        gaps.push({\n            date: lastRow.dateStr,\n            fromDate: lastRow.dateStr,\n            from: lastRow.timeStr,\n            fromMins: minsOfDay(new Date(lastRow.ts)),\n            fromTs: lastRow.ts,\n            toDate: dateStr(toNow),\n            to: timeStr(toNow),\n            toMins: minsOfDay(toNow),\n            toTs: toNow.getTime(),\n            gapMin: trailingGapMin,\n            prevCumOff: lastRow.cumOff,\n            prevCumSh: lastRow.cumSh,\n            prevCumPk: lastRow.cumPk,\n            prevCumExp: lastRow.cumExp,\n            currCumOff: 0,\n            currCumSh: 0,\n            currCumPk: 0,\n            currCumExp: 0,\n            _trailing: true,\n            _crossDay: lastRow.dateStr !== dateStr(toNow)\n        });\n    }\n}\n\nflow.set('haGapCsvData', csvData);\nflow.set('haGapInfo', gaps);\nflow.set('haGapDetectedAt', now.toISOString());\nif (gaps.length === 0) {\n    return [msg, null];\n}\nreturn [msg, msg];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 240,
+    "wires": [
+      [
+        "calculate_costs"
+      ],
+      [
+        "prepare_ha_queries"
+      ]
+    ]
+  },
+  {
+    "id": "prepare_ha_queries",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Prepare HA Queries",
+    "func": "// Generate HA history requests covering the full datetime span of all detected gaps.\nvar gaps = flow.get('haGapInfo') || [];\nif (gaps.length === 0) return null;\nvar haUrl = 'http://192.168.50.100:8123';\nvar haToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU';\nvar authHeader = 'Bearer ' + haToken;\n\nvar earliestTs = null;\nvar latestTs = null;\ngaps.forEach(function(g) {\n    if (earliestTs === null || g.fromTs < earliestTs) earliestTs = g.fromTs;\n    if (latestTs === null || g.toTs > latestTs) latestTs = g.toTs;\n});\nif (earliestTs === null || latestTs === null) return null;\nvar startTime = new Date(earliestTs - 60 * 60000).toISOString();\nvar endTime = new Date(latestTs + 60 * 60000).toISOString();\nflow.set('haQueryMeta', { startTime: startTime, endTime: endTime, gaps: gaps });\n\n// Clear any stale partial response set from a previous failed run.\n['offpeak','shoulder','peak','export'].forEach(function(t) { flow.set('haResp_' + t, undefined); });\n\nvar sensors = [\n    { topic: 'offpeak', entity: 'sensor.energy_import_meter_offpeak' },\n    { topic: 'shoulder', entity: 'sensor.energy_import_meter_shoulder' },\n    { topic: 'peak', entity: 'sensor.energy_import_meter_peak' },\n    { topic: 'export', entity: 'sensor.energy_export_meter_offpeak' }\n];\nvar msgs = sensors.map(function(s) {\n    return {\n        payload: '',\n        url: haUrl + '/api/history/period/' + encodeURIComponent(startTime) + '?filter_entity_id=' + s.entity + '&end_time=' + encodeURIComponent(endTime) + '&minimal_response=true',\n        method: 'GET',\n        headers: { 'Authorization': authHeader },\n        topic: s.topic\n    };\n});\nreturn msgs.map(function(m) { return [m]; });\n",
+    "outputs": 4,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 870,
+    "y": 340,
+    "wires": [
+      [
+        "ha_http_offpeak"
+      ],
+      [
+        "ha_http_shoulder"
+      ],
+      [
+        "ha_http_peak"
+      ],
+      [
+        "ha_http_export"
+      ]
+    ]
+  },
+  {
+    "id": "ha_http_offpeak",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HA Offpeak",
+    "method": "GET",
+    "ret": "obj",
+    "paytoq": false,
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "wires": [
+      [
+        "process_ha_and_fill"
+      ]
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "ha_http_shoulder",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HA Shoulder",
+    "method": "GET",
+    "ret": "obj",
+    "paytoq": false,
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "wires": [
+      [
+        "process_ha_and_fill"
+      ]
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "ha_http_peak",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HA Peak",
+    "method": "GET",
+    "ret": "obj",
+    "paytoq": false,
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "wires": [
+      [
+        "process_ha_and_fill"
+      ]
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "ha_http_export",
+    "type": "http request",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "HA Export",
+    "method": "GET",
+    "ret": "obj",
+    "paytoq": false,
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [
+      {
+        "keyType": "str",
+        "key": "Authorization",
+        "valueType": "str",
+        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
+      }
+    ],
+    "wires": [
+      [
+        "process_ha_and_fill"
+      ]
+    ],
+    "retType": "obj"
+  },
+  {
+    "id": "process_ha_and_fill",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Process HA & Fill Gaps",
+    "func": "// Collect HA responses, then fill detected CSV gaps using HA cumulative sensor anchors.\n// Output 0 goes to calculate_costs; output 1 persists the HA-filled 5minelecNEW.csv.\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n}\nvar topic = msg.topic;\nflow.set('haResp_' + topic, msg.payload);\n\nvar needed = ['offpeak', 'shoulder', 'peak', 'export'];\nvar allReady = needed.every(function(t) { return flow.get('haResp_' + t) !== undefined; });\nif (!allReady) return null;\n\nvar haData = {};\nneeded.forEach(function(t) {\n    haData[t] = flow.get('haResp_' + t);\n    flow.set('haResp_' + t, undefined);\n});\n\nvar csvData = flow.get('haGapCsvData');\nvar gaps = flow.get('haGapInfo') || [];\nif (!csvData || gaps.length === 0) {\n    msg.payload = csvData;\n    return [msg, null];\n}\n\nvar NL = String.fromCharCode(10);\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart.substring(0,5) + ':00'); }\n\nfunction parseHaResponse(resp) {\n    var arr = [];\n    if (!resp) return arr;\n    if (typeof resp === 'string') {\n        try { resp = JSON.parse(resp); } catch(e) { return arr; }\n    }\n    if (!Array.isArray(resp) || resp.length === 0) return arr;\n    var series = Array.isArray(resp[0]) ? resp[0] : resp;\n    if (!Array.isArray(series)) return arr;\n    series.forEach(function(entry) {\n        var rawTs = entry.lu || entry.last_updated || entry.last_changed;\n        var rawVal = entry.s;\n        if (rawVal === undefined) rawVal = entry.state;\n        if (!rawTs || rawVal === undefined || rawVal === null || rawVal === 'unknown' || rawVal === 'unavailable') return;\n        var dt = new Date(rawTs);\n        var val = parseFloat(rawVal);\n        if (isNaN(dt.getTime()) || isNaN(val)) return;\n        arr.push({ ts: dt.getTime(), val: val });\n    });\n    arr.sort(function(a,b) { return a.ts - b.ts; });\n    return arr;\n}\n\nvar haOff = parseHaResponse(haData.offpeak);\nvar haSh = parseHaResponse(haData.shoulder);\nvar haPk = parseHaResponse(haData.peak);\nvar haExp = parseHaResponse(haData.export);\n\nfunction haValAtTime(arr, targetTs) {\n    if (!arr || arr.length === 0) return null;\n    var best = null;\n    var bestDist = Infinity;\n    arr.forEach(function(e) {\n        var d = Math.abs(e.ts - targetTs);\n        if (d < bestDist) { bestDist = d; best = e; }\n    });\n    // Avoid using wildly distant samples as anchors.\n    return (best && bestDist <= 65 * 60000) ? best.val : null;\n}\n\nfunction makeAnchor(ts, off, sh, pk, exp, ha) {\n    return { ts: ts, off: off, sh: sh, pk: pk, exp: exp, ha: ha === true };\n}\nfunction makeHaAnchor(ts) {\n    var vOff = haValAtTime(haOff, ts);\n    var vSh = haValAtTime(haSh, ts);\n    var vPk = haValAtTime(haPk, ts);\n    var vExp = haValAtTime(haExp, ts);\n    if (vOff === null || vSh === null || vPk === null || vExp === null) return null;\n    return makeAnchor(ts, vOff, vSh, vPk, vExp, true);\n}\n\nvar csvLines = csvData.split(NL);\nwhile (csvLines.length > 0 && csvLines[csvLines.length - 1].trim() === '') csvLines.pop();\nvar wroteRows = false;\nvar totalInserted = 0;\n\n// Process from latest to earliest so insertion indexes remain valid.\ngaps.slice().sort(function(a,b) { return b.fromTs - a.fromTs; }).forEach(function(gap) {\n    var insertIdx = csvLines.length;\n    if (!gap._trailing) {\n        insertIdx = -1;\n        for (var cl = 1; cl < csvLines.length; cl++) {\n            var parts = csvLines[cl].split(',');\n            if (parts.length < 13) continue;\n            var peParts = (parts[12] || '').trim().split(' ');\n            if (peParts.length < 2) continue;\n            var rowDt = parseLocal(peParts[0], peParts[1]);\n            if (rowDt.getTime() === gap.toTs) { insertIdx = cl; break; }\n        }\n        if (insertIdx < 0) return;\n    }\n\n    var anchors = [];\n    anchors.push(makeAnchor(gap.fromTs, gap.prevCumOff, gap.prevCumSh, gap.prevCumPk, gap.prevCumExp, false));\n\n    // Add HA anchors at each hour boundary inside the gap, across any number of days.\n    var hTs = new Date(gap.fromTs);\n    hTs.setMinutes(0, 0, 0);\n    if (hTs.getTime() <= gap.fromTs) hTs = new Date(hTs.getTime() + 60 * 60000);\n    while (hTs.getTime() < gap.toTs) {\n        var haAnchor = makeHaAnchor(hTs.getTime());\n        if (haAnchor) anchors.push(haAnchor);\n        hTs = new Date(hTs.getTime() + 60 * 60000);\n    }\n\n    if (gap._trailing) {\n        var endHa = makeHaAnchor(gap.toTs);\n        if (!endHa) return;\n        anchors.push(endHa);\n    } else {\n        anchors.push(makeAnchor(gap.toTs, gap.currCumOff, gap.currCumSh, gap.currCumPk, gap.currCumExp, false));\n    }\n    anchors.sort(function(a,b) { return a.ts - b.ts; });\n    if (anchors.length < 2) return;\n\n    var newRows = [];\n    for (var ai = 0; ai < anchors.length - 1; ai++) {\n        var a1 = anchors[ai];\n        var a2 = anchors[ai + 1];\n        var subSlots = Math.floor((a2.ts - a1.ts) / (5 * 60000));\n        if (subSlots <= 0) continue;\n        for (var sj = 1; sj <= subSlots; sj++) {\n            var rowTs = a1.ts + sj * 5 * 60000;\n            if (!gap._trailing && rowTs >= gap.toTs) continue;\n            if (rowTs <= gap.fromTs || rowTs > gap.toTs) continue;\n            var d = new Date(rowTs);\n            var frac = sj / subSlots;\n            var pe = dateStr(d) + ' ' + timeStr(d) + ':00';\n            var row = pe + ','\n                + (a1.off + (a2.off - a1.off) * frac).toFixed(3) + ','\n                + (a1.sh + (a2.sh - a1.sh) * frac).toFixed(3) + ','\n                + (a1.pk + (a2.pk - a1.pk) * frac).toFixed(3) + ','\n                + (a1.exp + (a2.exp - a1.exp) * frac).toFixed(3)\n                + ',0,0,0,0,0,0,0,' + pe + ',0';\n            newRows.push(row);\n        }\n    }\n    if (newRows.length > 0) {\n        Array.prototype.splice.apply(csvLines, [insertIdx, 0].concat(newRows));\n        wroteRows = true;\n        totalInserted += newRows.length;\n    }\n});\n\nvar fixedCsv = csvLines.join(NL);\nmsg.payload = fixedCsv;\nflow.set('haGapRowsInserted', totalInserted);\nflow.set('haGapLastFillAt', new Date().toISOString());\nif (wroteRows) {\n    var now = new Date();\n    var ts = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate()) + '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());\n    var persistMsg = { payload: fixedCsv, filename: '/share/file_notifications/5minelecNEW.csv.backup.ha.' + ts };\n    // filename is intentionally only on the backup copy. write_fixed_csv uses its configured 5minelecNEW.csv path.\n    var fixedMsg = { payload: fixedCsv };\n    node.send([msg, fixedMsg]);\n    return;\n}\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1530,
+    "y": 340,
+    "wires": [
+      [
+        "calculate_costs"
+      ],
+      [
+        "write_fixed_csv"
+      ]
+    ]
+  },
+  {
+    "id": "manual_inject_fix",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Manual One-Shot Fix",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 170,
+    "y": 340,
+    "wires": [
+      [
+        "read_csv_file"
+      ]
+    ]
+  },
+  {
+    "id": "inject_copy_csv",
+    "type": "inject",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Copy CSV Now",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 170,
+    "y": 460,
+    "wires": [
+      [
+        "read_original_for_copy"
+      ]
+    ]
+  },
+  {
+    "id": "read_original_for_copy",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read Original CSV",
+    "filename": "/share/file_notifications/5minelec.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 390,
+    "y": 460,
+    "wires": [
+      [
+        "write_new_csv"
+      ]
+    ]
+  },
+  {
+    "id": "write_new_csv",
+    "type": "file",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Write NEW CSV",
+    "filename": "/share/file_notifications/5minelecNEW.csv",
+    "filenameType": "str",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "utf8",
+    "x": 600,
+    "y": 460,
+    "wires": [
+      [
+        "copy_done_resp"
+      ]
+    ]
+  },
+  {
+    "id": "copy_done_resp",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Copy Done",
+    "statusCode": "200",
+    "headers": {},
+    "x": 800,
+    "y": 460,
+    "wires": []
+  },
+  {
+    "id": "http_copy_csv_endpoint",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Copy CSV Endpoint",
+    "url": "/api/copy-csv",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 500,
+    "wires": [
+      [
+        "read_original_for_copy"
+      ]
+    ]
+  },
+  {
+    "id": "http_compare_csv_endpoint",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Compare CSV Endpoint",
+    "url": "/api/compare-csv",
+    "method": "get",
+    "upload": false,
+    "x": 170,
+    "y": 540,
+    "wires": [
+      [
+        "compare_csv_read_orig"
+      ]
+    ]
+  },
+  {
+    "id": "compare_csv_read_orig",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read Original",
+    "filename": "/share/file_notifications/5minelec.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 380,
+    "y": 540,
+    "wires": [
+      [
+        "compare_csv_read_new",
+        "compare_csv_store_orig"
+      ]
+    ]
+  },
+  {
+    "id": "compare_csv_store_orig",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Store Original",
+    "func": "flow.set('_compareOrig', msg.payload);\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 590,
+    "y": 520,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "compare_csv_read_new",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read NEW CSV",
+    "filename": "/share/file_notifications/5minelecNEW.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 590,
+    "y": 560,
+    "wires": [
+      [
+        "compare_csv_func"
+      ]
+    ]
+  },
+  {
+    "id": "compare_csv_func",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Compare",
+    "func": "var orig = flow.get('_compareOrig');\nif (orig === undefined || orig === null) {\n    // First pass - store the original CSV\n    flow.set('_compareOrig', msg.payload);\n    msg.payload = { status: 'stored original, reading new...' };\n    return msg;\n}\n// Second pass - compare\nvar newCsv = msg.payload;\nvar origCsv = orig;\nflow.set('_compareOrig', null);\n\nvar today = '2026-07-01';\nvar NL = String.fromCharCode(10);\nvar origLines = origCsv.split(NL).filter(function(l){ return l.indexOf(today) !== -1; });\nvar newLines = newCsv.split(NL).filter(function(l){ return l.indexOf(today) !== -1; });\n\nvar result = {\n    date: today,\n    original_today_lines: origLines.length,\n    new_today_lines: newLines.length,\n    original_first: origLines[0] || 'NONE',\n    original_last: origLines[origLines.length-1] || 'NONE',\n    new_first: newLines[0] || 'NONE',\n    new_last: newLines[newLines.length-1] || 'NONE',\n    identical: (origCsv === newCsv),\n    original_total_lines: origCsv.split(NL).length,\n    new_total_lines: newCsv.split(NL).length\n};\n\nmsg.payload = result;\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 780,
+    "y": 540,
+    "wires": [
+      [
+        "compare_csv_resp"
+      ]
+    ]
+  },
+  {
+    "id": "compare_csv_resp",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Compare Response",
+    "statusCode": "200",
+    "headers": {},
+    "x": 980,
+    "y": 540,
+    "wires": []
+  }
+]
