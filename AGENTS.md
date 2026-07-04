@@ -8,7 +8,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Script tags stripped by `custom:html-card` — `<iframe>` used instead for the 5-min interactive report
 - Node-RED `httpNodeRoot` = `/endpoint`; HTTP nodes served under `/endpoint/`
 - HA at http://192.168.50.100:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
-- **No references to `5minelec.csv`**: HA data logger's `5minelec.csv` is NOT used by the flow. The working file is `5minelecNEW.csv` only. Copy mechanism (previously `inject_copy_csv` / HTTP GET `/endpoint/api/copy-csv`) was removed — the flow has no copy/seed path. If `5minelecNEW.csv` is empty or missing on startup, `detect_gaps_for_ha` generates 12 midnight seed rows (cum=0 for 11 days + today) and gap-filling fills them from HA history.
+- **No references to `5minelec.csv`**: HA data logger's `5minelec.csv` is NOT used by the flow. The working file is `5minelecNEW.csv` only. Copy mechanism (previously `inject_copy_csv` / HTTP GET `/endpoint/api/copy-csv`) was removed. Historical data can be imported from `newseed.csv` via `GET /endpoint/api/import-seed`. If `5minelecNEW.csv` is empty or missing on startup, `detect_gaps_for_ha` generates 12 midnight seed rows (cum=0 for 11 days + today) and gap-filling fills them from HA history. Older seed-csv endpoint (`/endpoint/api/seed-csv`) was removed in v2.33 — it was hazardous as it overwrote the file with 12 bootstrap rows, destroying historical data.
 - Billing cycle: configurable via `billing_day` column in retailer_config.csv (default 4, 4th→3rd)
 - Deploy via `bash deploy.sh` — uses `PUT /flow/tab_energy_retailer_comparison` (does not touch other tabs)
 - Node-RED v5.0.0, HA v2026.6.1, apexcharts-card v1.4.0 (no `entity: url` support — uses `data_generator`)
@@ -33,6 +33,10 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Seed CSV HTTP endpoint**: Added `/endpoint/api/seed-csv` (HTTP GET) for emergency CSV rebuild — generates 12 bootstrap midnight rows and writes directly to `5minelecNEW.csv` via dedicated `write_seed_csv` file-out node.
 - **Broker chain fixed (post-gap-fill)**: Removed erroneous `msg.payload = csvContent` in `process_ha_and_fill` that caused `ReferenceError: csvContent is not defined`, halting the gap-fill `node.send()` and preventing `calculate_costs` from receiving filled data.
 - **Full gap-fill recovery demonstrated**: 0→3068 rows (11 days of 5-min data) from all 7 HA history sensors, costs calculated for all 4 retailers, 6 HA sensor entities populated.
+- **Seed CSV endpoint removed (v2.33)**: `/endpoint/api/seed-csv` deleted — it overwrote the CSV with 12 bootstrap rows, destroying historical data. Replaced by `/endpoint/api/import-seed` which reads `newseed.csv` and merges with current data.
+- **Import seed endpoint added (v2.33)**: `GET /endpoint/api/import-seed` — reads `/share/file_notifications/newseed.csv`, merges rows with current `5minelecNEW.csv` (keeping current rows for overlapping timestamps), writes back. Successfully recovered 198 days (Dec 19 → Jul 4) with 57,578 gap-filled rows from 54,445 seed + 3,133 current rows.
+- **6 new nodes**: `import_seed_http_in`, `import_read_seed_csv`, `import_seed_store`, `import_read_current_csv`, `import_seed_merge` (chains: HTTP→file-in→store→file-in→merge→write+HTPP-resp), `import_seed_http_resp`.
+- **4 nodes removed (seed-csv)**: `http_seed_csv_endpoint`, `seed_csv_func`, `write_seed_csv`, `http_seed_csv_resp`.
 
 ### In Progress
 - (none)
@@ -59,6 +63,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 ## Next Steps
 - (none — all items verified and complete)
 
+## Key Decisions (cont.)
+- **Seed CSV endpoint removed**: `/endpoint/api/seed-csv` was dangerous — it overwrote `5minelecNEW.csv` with 12 bootstrap rows, destroying any historical data. Replaced by `/endpoint/api/import-seed` which reads `newseed.csv` (external historical snapshot) and merges it with current data without data loss.
+- **Import endpoint chain**: HTTP→file-in (newseed.csv)→store→file-in (5minelecNEW.csv)→merge→write+response. Uses `write_fixed_csv` (existing) for the final write.
+- **Merge strategy**: current CSV rows take priority for overlapping timestamps; seed rows fill in missing older dates only.
+
 ## Critical Context
 - Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
 - Flow variable `fiveMinDetail` stored by `calculate_costs`, read by both HTTP handlers
@@ -74,11 +83,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - CSV header: 32 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day`
 
 ## Relevant Files
-- `node_red_flow.json`: Complete flow — 68 nodes + group + config editor endpoints + seed CSV endpoint
+- `node_red_flow.json`: Complete flow — 72 nodes + group + config editor endpoints + import seed endpoint
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.32)
+- `VERSION`: Current version (v2.33)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 

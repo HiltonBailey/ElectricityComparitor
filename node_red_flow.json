@@ -1455,70 +1455,110 @@
     "retType": "obj"
   },
   {
-    "id": "http_seed_csv_endpoint",
+    "id": "import_seed_http_in",
     "type": "http in",
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
-    "name": "Seed CSV Endpoint",
-    "url": "/api/seed-csv",
+    "name": "Import Seed CSV",
+    "url": "/api/import-seed",
     "method": "get",
     "upload": false,
+    "swaggerDoc": "",
     "x": 170,
-    "y": 760,
+    "y": 840,
     "wires": [
       [
-        "seed_csv_func"
+        "import_read_seed_csv"
       ]
     ]
   },
   {
-    "id": "seed_csv_func",
+    "id": "import_read_seed_csv",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read newseed.csv",
+    "filename": "/share/file_notifications/newseed.csv",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 600,
+    "y": 840,
+    "wires": [
+      [
+        "import_seed_store"
+      ]
+    ]
+  },
+  {
+    "id": "import_seed_store",
     "type": "function",
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
-    "name": "Generate Seed CSV",
-    "func": "var NL = String.fromCharCode(10);\nvar header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\nvar rows = [];\nvar now = new Date();\nvar mid = new Date(now.getFullYear(), now.getMonth(), now.getDate());\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfor (var di = 11; di >= 0; di--) {\n    var d = new Date(mid.getTime() - di * 86400000);\n    var pe = new Date(d.getTime() + 5 * 60000);\n    var peDs = dateStr(pe) + ' 00:05:00';\n    rows.push(peDs + ',0,0,0,0,0,0,0,0,0,0,0,' + peDs + ',0');\n}\nvar csvData = header + NL + rows.join(NL);\nreturn [{payload: csvData, req: msg.req, res: msg.res}, {payload: csvData}];",
-    "outputs": 2,
+    "name": "Store Seed Data",
+    "func": "var NL = String.fromCharCode(10);\nflow.set('importSeedData', msg.payload);\nreturn msg;",
+    "outputs": 1,
     "noerr": 0,
-    "x": 410,
-    "y": 760,
+    "x": 840,
+    "y": 840,
     "wires": [
       [
-        "http_seed_csv_resp"
-      ],
-      [
-        "write_seed_csv"
+        "import_read_current_csv"
       ]
     ]
   },
   {
-    "id": "write_seed_csv",
-    "type": "file",
+    "id": "import_read_current_csv",
+    "type": "file in",
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
-    "name": "Write Seed CSV",
+    "name": "Read 5minelecNEW.csv",
     "filename": "/share/file_notifications/5minelecNEW.csv",
-    "filenameType": "str",
-    "appendNewline": true,
-    "createDir": true,
-    "overwriteFile": "true",
-    "encoding": "none",
-    "x": 650,
-    "y": 800,
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 1080,
+    "y": 840,
     "wires": [
-      []
+      [
+        "import_seed_merge"
+      ]
     ]
   },
   {
-    "id": "http_seed_csv_resp",
+    "id": "import_seed_merge",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Merge & Write",
+    "func": "var NL = String.fromCharCode(10);\nvar seedCsv = flow.get('importSeedData') || '';\nvar currentCsv = msg.payload || '';\n\nfunction parseCsv(csv) {\n    var lines = csv.split(NL).filter(function(l) { return l.trim().length > 0; });\n    var rows = [];\n    for (var i = 1; i < lines.length; i++) {\n        var cols = lines[i].split(',');\n        if (cols.length >= 14) {\n            rows.push(cols);\n        }\n    }\n    return rows;\n}\n\nvar seedRows = parseCsv(seedCsv);\nvar currentRows = parseCsv(currentCsv);\n\n// Build map from current CSV\nvar currentMap = {};\nfor (var i = 0; i < currentRows.length; i++) {\n    currentMap[currentRows[i][0]] = true;\n}\n\n// Merge: keep all current rows, add seed rows not already present\nvar mergedRows = [];\nfor (var i = 0; i < currentRows.length; i++) {\n    mergedRows.push(currentRows[i].join(','));\n}\nfor (var i = 0; i < seedRows.length; i++) {\n    var dt = seedRows[i][0];\n    if (!currentMap[dt]) {\n        mergedRows.push(seedRows[i].join(','));\n    }\n}\n\n// Sort by datetime\nmergedRows.sort();\n\nvar header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\nvar mergedCsv = header + NL + mergedRows.join(NL);\n\nvar result = {\n    status: 'ok',\n    message: 'Import complete',\n    seed_rows: seedRows.length,\n    current_rows: currentRows.length,\n    merged_rows: mergedRows.length,\n    version: '##GIT_VERSION##'\n};\n\n// Clean up flow variable\nflow.set('importSeedData', null);\n\nreturn [\n    {payload: mergedCsv},\n    {payload: result, req: msg.req, res: msg.res}\n];",
+    "outputs": 2,
+    "noerr": 0,
+    "x": 1310,
+    "y": 840,
+    "wires": [
+      [
+        "write_fixed_csv"
+      ],
+      [
+        "import_seed_http_resp"
+      ]
+    ]
+  },
+  {
+    "id": "import_seed_http_resp",
     "type": "http response",
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
-    "name": "Seed CSV Response",
+    "name": "Import Response",
     "statusCode": "",
     "headers": {},
-    "x": 830,
-    "y": 680,
+    "x": 1520,
+    "y": 880,
     "wires": []
   }
 ]
