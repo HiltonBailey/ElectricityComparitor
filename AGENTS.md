@@ -8,7 +8,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Script tags stripped by `custom:html-card` — `<iframe>` used instead for the 5-min interactive report
 - Node-RED `httpNodeRoot` = `/endpoint`; HTTP nodes served under `/endpoint/`
 - HA at http://192.168.50.100:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
-- HA CSV source: `/share/file_notifications/5minelec.csv` (14 cols, cumulative energy columns)
+- **No references to `5minelec.csv`**: HA data logger's `5minelec.csv` is NOT used by the flow. The working file is `5minelecNEW.csv` only. Copy mechanism (previously `inject_copy_csv` / HTTP GET `/endpoint/api/copy-csv`) was removed — the flow has no copy/seed path. If `5minelecNEW.csv` is empty or missing on startup, `detect_gaps_for_ha` generates 12 midnight seed rows (cum=0 for 11 days + today) and gap-filling fills them from HA history.
 - Billing cycle: configurable via `billing_day` column in retailer_config.csv (default 4, 4th→3rd)
 - Deploy via `bash deploy.sh` — uses `PUT /flow/tab_energy_retailer_comparison` (does not touch other tabs)
 - Node-RED v5.0.0, HA v2026.6.1, apexcharts-card v1.4.0 (no `entity: url` support — uses `data_generator`)
@@ -19,6 +19,20 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 ## Progress
 
 ### Done
+- **`5minelec.csv` eliminated**: Removed `read_original_for_copy` and `compare_csv_read_orig` nodes — flow never reads/writes `5minelec.csv`. Copy mechanism replaced with `build_csv_from_ha` → `http_get_ha_states` → `parse_csv_from_ha` chain that queries HA `/api/states` and writes directly to `5minelecNEW.csv`.
+- **Midnight seed row**: Copy now includes a midnight row (cum=0) so gap-filling detects a gap from 00:00 to current time, covering the full day.
+- **HA history `Z` suffix fix**: HA's `/api/history/period/` requires `Z` suffix (not `+00:00`). The flow's `.toISOString()` already produces `Z` but Python testing revealed the root cause of empty history results was the `+00:00` format.
+- **HA history gap-filling now functional**: CSV seeded with midnight+current row → gap-filling fills 159 rows from HA history with correct cumulative values from all 7 period sensors.
+- **Export fix (v2.29)**: Added 3 new HTTP nodes for export_shoulder/peak/superpeak sensors. `process_ha_and_fill` now sums all 4 export period sensors for total export.
+- **10-day query clip**: HA history queries limited to last 10 days where short-term recorder has reliable 5-min data.
+- **NR v5 auth fix**: All builder functions set `msg.headers: { 'Authorization': authHeader }` instead of relying on node-set headers.
+- **5-min detail sensor 404 fixed**: Uncommented `flow.set('fiveMinDetail', ...)` in `calculate_costs` and added `msg.headers` to `build_five_min_detail`.
+- **Copy chain removed**: `build_csv_from_ha`, `http_get_ha_states`, `parse_csv_from_ha`, `write_new_csv`, `copy_done_resp`, `inject_copy_csv`, `http_copy_csv_endpoint` nodes removed. Bootstrap moved into `detect_gaps_for_ha` — generates midnight seed rows if CSV is empty.
+- **11-day query clip**: Increased from 10 to 11 days to match full HA short-term recorder window.
+- **`msg.payload` bootstrap fix**: `detect_gaps_for_ha` now sets `msg.payload = csvData` after generating midnight seeds, so `calculate_costs` receives the seeded CSV data instead of the original empty payload.
+- **Seed CSV HTTP endpoint**: Added `/endpoint/api/seed-csv` (HTTP GET) for emergency CSV rebuild — generates 12 bootstrap midnight rows and writes directly to `5minelecNEW.csv` via dedicated `write_seed_csv` file-out node.
+- **Broker chain fixed (post-gap-fill)**: Removed erroneous `msg.payload = csvContent` in `process_ha_and_fill` that caused `ReferenceError: csvContent is not defined`, halting the gap-fill `node.send()` and preventing `calculate_costs` from receiving filled data.
+- **Full gap-fill recovery demonstrated**: 0→3068 rows (11 days of 5-min data) from all 7 HA history sensors, costs calculated for all 4 retailers, 6 HA sensor entities populated.
 
 ### In Progress
 - (none)
@@ -39,12 +53,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - Free import 24kWh/day cap tracked per day per retailer as `freeUsage`, reset daily; excess charged at shoulder rate
 - Per-period FIT windows allow different FIT windows from TOU windows for each period
 - Retailer config stored in `/share/retailer_config.csv`; flow reads on each 5-min cycle; template node as fallback
-- **HA history gap filling**: queries `sensor.energy_import_meter_offpeak/shoulder/peak` and `sensor.energy_export_meter_offpeak` at hour boundaries within gaps; uses real cumulative values as interpolation anchors; falls back to linear interpolation when HA data unavailable; process_ha_and_fill collects 4 HTTP responses via flow variables before processing
+- **HA history gap filling**: queries `sensor.energy_import_meter_offpeak/shoulder/peak` and `sensor.energy_export_meter_offpeak/shoulder/peak/superpeak` across gap boundaries; uses real cumulative values as interpolation anchors; falls back to linear interpolation when HA data unavailable; `process_ha_and_fill` collects 7 HTTP responses via flow variables before processing
+- **Export sums all 4 period sensors**: `totalExp = vExpOff + vExpSh + vExpPk + vExpSp` in `makeHaRow` — single export cumulative sensor doesn't exist in HA; must reconstruct from 4 period sensors
 
 ## Next Steps
 - (none — all items verified and complete)
-
-### Fixed
 
 ## Critical Context
 - Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
@@ -61,11 +74,11 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - CSV header: 32 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day`
 
 ## Relevant Files
-- `node_red_flow.json`: Complete flow — 55 nodes + group + config editor endpoints
+- `node_red_flow.json`: Complete flow — 68 nodes + group + config editor endpoints + seed CSV endpoint
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.11)
+- `VERSION`: Current version (v2.32)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
