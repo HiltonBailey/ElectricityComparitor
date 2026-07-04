@@ -37,6 +37,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Import seed endpoint added (v2.33)**: `GET /endpoint/api/import-seed` — reads `/share/file_notifications/newseed.csv`, merges rows with current `5minelecNEW.csv` (keeping current rows for overlapping timestamps), writes back. Successfully recovered 198 days (Dec 19 → Jul 4) with 57,578 gap-filled rows from 54,445 seed + 3,133 current rows.
 - **6 new nodes**: `import_seed_http_in`, `import_read_seed_csv`, `import_seed_store`, `import_read_current_csv`, `import_seed_merge` (chains: HTTP→file-in→store→file-in→merge→write+HTPP-resp), `import_seed_http_resp`.
 - **4 nodes removed (seed-csv)**: `http_seed_csv_endpoint`, `seed_csv_func`, `write_seed_csv`, `http_seed_csv_resp`.
+- **FlowPower PEA fix (v2.34)**: `flowRate` was a global const using `billingPea[getBillingKey(today)]` only — all historical dates used today's PEA. Changed to a `getFlowRate(dateStr)` function that computes the rate per-day: `flowPowerRate + (billingPea[getBillingKey(dateStr)] || pea || 0)`. Applied to all 6 hybrid usages: per-interval import, daily summary import/net, 5-min detail impRate and TOTAL impCost. June Import $ dropped from $9.89→$8.14 (PEA −0.074) while July correctly stayed at 0.3230.
 
 ### In Progress
 - (none)
