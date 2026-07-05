@@ -38,6 +38,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **6 new nodes**: `import_seed_http_in`, `import_read_seed_csv`, `import_seed_store`, `import_read_current_csv`, `import_seed_merge` (chains: HTTP→file-in→store→file-in→merge→write+HTPP-resp), `import_seed_http_resp`.
 - **4 nodes removed (seed-csv)**: `http_seed_csv_endpoint`, `seed_csv_func`, `write_seed_csv`, `http_seed_csv_resp`.
 - **FlowPower PEA fix (v2.34)**: `flowRate` was a global const using `billingPea[getBillingKey(today)]` only — all historical dates used today's PEA. Changed to a `getFlowRate(dateStr)` function that computes the rate per-day: `flowPowerRate + (billingPea[getBillingKey(dateStr)] || pea || 0)`. Applied to all 6 hybrid usages: per-interval import, daily summary import/net, 5-min detail impRate and TOTAL impCost. June Import $ dropped from $9.89→$8.14 (PEA −0.074) while July correctly stayed at 0.3230.
+- **Timestamp convention fixed (v2.34)**: Gap-fill and midnight seed rows were generating `HH:MM:59` timestamps (1s before interval end), inconsistent with original seed data's `HH:MM:00` format. Fixed `process_ha_and_fill` to remove the `-1000ms` offset (now uses `new Date(rowTs)` directly with `:00` seconds) and `detect_gaps_for_ha` to use `00:05:00` instead of `00:04:59`. CSV reseeded from `newseed.csv` (57,796 rows, Dec 19 → Jul 5, all `:00` format consistent).
 
 ### In Progress
 - (none)
