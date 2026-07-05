@@ -38,8 +38,16 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **6 new nodes**: `import_seed_http_in`, `import_read_seed_csv`, `import_seed_store`, `import_read_current_csv`, `import_seed_merge` (chains: HTTP→file-in→store→file-in→merge→write+HTPP-resp), `import_seed_http_resp`.
 - **4 nodes removed (seed-csv)**: `http_seed_csv_endpoint`, `seed_csv_func`, `write_seed_csv`, `http_seed_csv_resp`.
 - **FlowPower PEA fix (v2.34)**: `flowRate` was a global const using `billingPea[getBillingKey(today)]` only — all historical dates used today's PEA. Changed to a `getFlowRate(dateStr)` function that computes the rate per-day: `flowPowerRate + (billingPea[getBillingKey(dateStr)] || pea || 0)`. Applied to all 6 hybrid usages: per-interval import, daily summary import/net, 5-min detail impRate and TOTAL impCost. June Import $ dropped from $9.89→$8.14 (PEA −0.074) while July correctly stayed at 0.3230.
-- **Timestamp convention (period-ending)**: All CSV timestamps use `HH:MM:59` format representing the end of the 5-min billing period (e.g., `00:04:59` for 00:00:00–00:04:59, `23:59:59` for 23:55:00–23:59:59). Gap-fill in `process_ha_and_fill` uses `-1000ms` offset to produce `:59` timestamps. Midnight seed rows in `detect_gaps_for_ha` use `00:04:59`. Code that reads timestamps should not assume `:00` second format — treat the timestamp as period-ending, not period-starting.
+- **Timestamp convention (period-ending)**: All CSV timestamps use `HH:MM:59` format representing the end of the 5-min billing period. Code that reads timestamps should not assume `:00` second format — treat the timestamp as period-ending, not period-starting.
 - **Bootstrap safety fix**: `detect_gaps_for_ha` bootstrap (which regenerates CSV with 12 midnight seed rows) now checks if the file actually exists via `fs.existsSync()` before running. If the file exists but read returned empty/error, the function returns `null` (skips the cycle) instead of overwriting historical data. This prevents catastrophic data loss when the CSV read fails transiently (e.g., race condition with concurrent write).
+- **Gap-fill timestamp fix (v2.35)**: `parseLocal` in both `detect_gaps_for_ha` and `process_ha_and_fill` previously used `timePart.substring(0,5) + ':00'`, truncating seconds. This caused `fromTs` to be 59 seconds early, making generated timestamps 1 min off (e.g., `23:58:59` instead of `23:59:59`). Fixed by using the full `HH:MM:SS` string. Also fixed `timeStr` to output `HH:MM:SS` and removed the hacky `-1000ms` offset — gap-fill now generates correct `:59` timestamps directly from `rowTs`.
+- **Trailing gap `toNow` fix (v2.35)**: `toNow` was rounded to the START of the current 5-min slot (`:00`), missing 4:59 of fillable data per cycle. Changed to `floor(...) * 5min + 5min - 1s` so `toNow` is the end of the last complete slot (`:59`), matching the CSV timestamp convention.
+- **14-day gap age filter (v2.36)**: `detect_gaps_for_ha` now filters out gaps older than 14 days before triggering HA queries — prevents processing massive un-fillable gaps (e.g., the 186-day seed data gap). Filter applied BEFORE `flow.set('haGapInfo', ...)` so debug endpoint shows only filtered gaps.
+- **Full-range HA queries (v2.36)**: `prepare_ha_queries` no longer clips to 11 days — queries the full gap range. HA returns whatever data is available (short-term or long-term). Tracks earliest gap timestamp via `haLongTermStart` flow variable.
+- **Gap-fill logging (v2.36)**: `process_ha_and_fill` now appends gap-fill activity to `/share/file_notifications/elecdatalog.txt` via `fs.appendFileSync` after each cycle. Logs: timestamp, data source, gap timestamps (from/to), gap_min, trailing/cross_day flags, row counts. Readable via `GET /endpoint/api/log`.
+- **Log HTTP endpoint (v2.36)**: Added `GET /endpoint/api/log` — reads `/share/file_notifications/elecdatalog.txt` and returns JSON with `content` and `lines` fields. 4 new nodes: `logger_http_in`, `logger_read_file`, `logger_func`, `logger_http_resp`.
+- **Calculate costs race fix (v2.37)**: `detect_gaps_for_ha` previously sent original csvData to `calculate_costs` (wire[0]) while also triggering the gap-fill chain (wire[1]). `calculate_costs` would write the ORIGINAL (pre-fill) data to the file via output 3 → `write_fixed_csv` BEFORE `process_ha_and_fill` could merge the HA-filled rows. If the gap-fill chained failed or took too long, the file was overwritten with un-filled data, causing rows to be lost. Fixed by changing `return [msg, msg]` to `return [null, msg, msg]` — when gaps exist, wire[0] is `null` so `calculate_costs` is not triggered until `process_ha_and_fill` completes and sends the merged data. When no gaps exist, `return [msg, null]` continues to work as before.
+- **NR v5 msg property override warnings fixed (v2.37)**: 9 HTTP request nodes had hardcoded `Authorization: Bearer <token>` in their node `headers` config, but all upstream builder functions also set `msg.headers` dynamically via `global.get('ha_token')`. In NR v5, configured properties win — `msg.headers` was silently discarded and a warning fired each cycle. Fixed by clearing `headers: []` on all 9 nodes (the builders already provide the correct headers via msg).
 
 ### In Progress
 - (none)
@@ -64,7 +72,8 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Export sums all 4 period sensors**: `totalExp = vExpOff + vExpSh + vExpPk + vExpSp` in `makeHaRow` — single export cumulative sensor doesn't exist in HA; must reconstruct from 4 period sensors
 
 ## Next Steps
-- (none — all items verified and complete)
+- Verify 5-min cycles continue running cleanly with 57k+ row CSV
+- Verify `elecdatalog.txt` appears after first gap-fill cycle
 
 ## Key Decisions (cont.)
 - **Seed CSV endpoint removed**: `/endpoint/api/seed-csv` was dangerous — it overwrote `5minelecNEW.csv` with 12 bootstrap rows, destroying any historical data. Replaced by `/endpoint/api/import-seed` which reads `newseed.csv` (external historical snapshot) and merges it with current data without data loss.
@@ -90,7 +99,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.33)
+- `VERSION`: Current version (v2.35)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 

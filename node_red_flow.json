@@ -270,14 +270,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1640,
     "y": 600,
     "wires": [
@@ -300,14 +293,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1590,
     "y": 520,
     "wires": [
@@ -388,14 +374,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1630,
     "y": 640,
     "wires": [
@@ -439,14 +418,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1640,
     "y": 680,
     "wires": [
@@ -563,14 +535,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1620,
     "y": 560,
     "wires": [
@@ -614,14 +579,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1610,
     "y": 720,
     "wires": [
@@ -665,14 +623,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 1590,
     "y": 840,
     "wires": [
@@ -936,20 +887,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": true,
-    "headers": [
-      {
-        "keyType": "Authorization",
-        "keyValue": "",
-        "valueType": "msg",
-        "valueValue": "headers.Authorization"
-      },
-      {
-        "keyType": "Content-type",
-        "keyValue": "",
-        "valueType": "str",
-        "valueValue": "application/json"
-      }
-    ],
+    "headers": [],
     "x": 1080,
     "y": 520,
     "wires": [
@@ -1013,14 +951,7 @@
     "insecureHTTPParser": false,
     "authType": "",
     "senderr": false,
-    "headers": [
-      {
-        "keyType": "str",
-        "key": "Authorization",
-        "valueType": "str",
-        "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU"
-      }
-    ],
+    "headers": [],
     "x": 150,
     "y": 360,
     "wires": [
@@ -1090,7 +1021,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Detect Gaps (HA)",
-    "func": "// Parse 5minelec.csv and detect gaps that should be filled from HA cumulative energy sensors.\n// Handles normal same-day CSV gaps plus stale/trailing files across day boundaries.\nvar csvData = msg.payload;\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n    csvData = msg.payload;\n}\n// Bootstrap: if CSV is empty, generate midnight seeds for 11 days + current timestamp\n// Only bootstrap if the file genuinely doesn't exist — prevents destroying historical data\nif (typeof csvData !== 'string' || csvData.length < 100) {\n    var fs = require('fs');\n    if (fs.existsSync('/share/file_notifications/5minelecNEW.csv')) {\n        return null;\n    }\n    var NL = String.fromCharCode(10);\n    var now = new Date();\n    function pad2(n) { return n < 10 ? '0' + n : '' + n; }\n    function dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\n    var header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\n    var rows = [];\n    var mid = new Date(now.getFullYear(), now.getMonth(), now.getDate());\n    for (var di = 11; di >= 0; di--) {\n        var d = new Date(mid.getTime() - di * 86400000);\n        var ds = dateStr(d);\n        var pe = new Date(d.getTime() + 5 * 60000);\n        var peDs = dateStr(pe) + ' 00:04:59';\n        rows.push(peDs + ',0,0,0,0,0,0,0,0,0,0,0,' + peDs + ',0');\n    }\n    csvData = header + NL + rows.join(NL);\nmsg.payload = csvData;\n}\n\n\nvar NL = String.fromCharCode(10);\nvar lines = csvData.split(NL);\nvar rawRows = [];\nvar now = new Date();\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart.substring(0,5) + ':00'); }\nfunction minsOfDay(d) { return d.getHours() * 60 + d.getMinutes(); }\n\nfor (var i = 1; i < lines.length; i++) {\n    var row = lines[i].split(',');\n    if (row.length < 14) continue;\n    var periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    var parts = periodEnding.split(' ');\n    if (parts.length < 2) continue;\n    var pd = parseLocal(parts[0], parts[1]);\n    if (isNaN(pd.getTime())) continue;\n    if ((pd - now) > 90 * 24 * 60 * 60 * 1000) continue;\n    rawRows.push({\n        lineIdx: i,\n        periodEnding: periodEnding,\n        dateStr: parts[0],\n        timeStr: parts[1].substring(0,5),\n        ts: pd.getTime(),\n        cumOff: parseFloat(row[1]) || 0,\n        cumSh: parseFloat(row[2]) || 0,\n        cumPk: parseFloat(row[3]) || 0,\n        cumExp: parseFloat(row[4]) || 0\n    });\n}\nrawRows.sort(function(a,b) { return a.ts - b.ts; });\n\nvar gaps = [];\nfor (var ri = 1; ri < rawRows.length; ri++) {\n    var prev = rawRows[ri - 1];\n    var curr = rawRows[ri];\n    var gapMin = Math.round((curr.ts - prev.ts) / 60000);\n    if (gapMin > 6) {\n        gaps.push({\n            date: prev.dateStr,\n            fromDate: prev.dateStr,\n            from: prev.timeStr,\n            fromMins: minsOfDay(new Date(prev.ts)),\n            fromTs: prev.ts,\n            toDate: curr.dateStr,\n            to: curr.timeStr,\n            toMins: minsOfDay(new Date(curr.ts)),\n            toTs: curr.ts,\n            gapMin: gapMin,\n            prevCumOff: prev.cumOff,\n            prevCumSh: prev.cumSh,\n            prevCumPk: prev.cumPk,\n            prevCumExp: prev.cumExp,\n            currCumOff: curr.cumOff,\n            currCumSh: curr.cumSh,\n            currCumPk: curr.cumPk,\n            currCumExp: curr.cumExp,\n            _crossDay: prev.dateStr !== curr.dateStr\n        });\n    }\n}\n\n// Check for trailing/stale gap from the last CSV row to the latest completed 5-minute boundary.\nif (rawRows.length > 0) {\n    var lastRow = rawRows[rawRows.length - 1];\n    var toNow = new Date(Math.floor(now.getTime() / (5 * 60000)) * (5 * 60000));\n    var trailingGapMin = Math.round((toNow.getTime() - lastRow.ts) / 60000);\n    if (trailingGapMin > 6) {\n        gaps.push({\n            date: lastRow.dateStr,\n            fromDate: lastRow.dateStr,\n            from: lastRow.timeStr,\n            fromMins: minsOfDay(new Date(lastRow.ts)),\n            fromTs: lastRow.ts,\n            toDate: dateStr(toNow),\n            to: timeStr(toNow),\n            toMins: minsOfDay(toNow),\n            toTs: toNow.getTime(),\n            gapMin: trailingGapMin,\n            prevCumOff: lastRow.cumOff,\n            prevCumSh: lastRow.cumSh,\n            prevCumPk: lastRow.cumPk,\n            prevCumExp: lastRow.cumExp,\n            currCumOff: 0,\n            currCumSh: 0,\n            currCumPk: 0,\n            currCumExp: 0,\n            _trailing: true,\n            _crossDay: lastRow.dateStr !== dateStr(toNow)\n        });\n    }\n}\n\nflow.set('haGapCsvData', csvData);\nflow.set('haGapInfo', gaps);\nflow.set('haGapDetectedAt', now.toISOString());\nif (gaps.length === 0) {\n    return [msg, null];\n}\nreturn [msg, msg];\n",
+    "func": "// Parse 5minelec.csv and detect gaps that should be filled from HA cumulative energy sensors.\n// Handles normal same-day CSV gaps plus stale/trailing files across day boundaries.\nvar csvData = msg.payload;\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n    csvData = msg.payload;\n}\n// Bootstrap: if CSV is empty, generate midnight seeds for 11 days + current timestamp\n// Only bootstrap if the file genuinely doesn't exist \u2014 prevents destroying historical data\nif (typeof csvData !== 'string' || csvData.length < 100) {\n    var fs = require('fs');\n    if (fs.existsSync('/share/file_notifications/5minelecNEW.csv')) {\n        return null;\n    }\n    var NL = String.fromCharCode(10);\n    var now = new Date();\n    function pad2(n) { return n < 10 ? '0' + n : '' + n; }\n    function dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\n    var header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\n    var rows = [];\n    var mid = new Date(now.getFullYear(), now.getMonth(), now.getDate());\n    for (var di = 11; di >= 0; di--) {\n        var d = new Date(mid.getTime() - di * 86400000);\n        var ds = dateStr(d);\n        var pe = new Date(d.getTime() + 5 * 60000);\n        var peDs = dateStr(pe) + ' 00:04:59';\n        rows.push(peDs + ',0,0,0,0,0,0,0,0,0,0,0,' + peDs + ',0');\n    }\n    csvData = header + NL + rows.join(NL);\nmsg.payload = csvData;\n}\n\n\nvar NL = String.fromCharCode(10);\nvar lines = csvData.split(NL);\nvar rawRows = [];\nvar now = new Date();\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart); }\nfunction minsOfDay(d) { return d.getHours() * 60 + d.getMinutes(); }\n\nfor (var i = 1; i < lines.length; i++) {\n    var row = lines[i].split(',');\n    if (row.length < 14) continue;\n    var periodEnding = row[12].trim();\n    if (!periodEnding) continue;\n    var parts = periodEnding.split(' ');\n    if (parts.length < 2) continue;\n    var pd = parseLocal(parts[0], parts[1]);\n    if (isNaN(pd.getTime())) continue;\n    if ((pd - now) > 90 * 24 * 60 * 60 * 1000) continue;\n    rawRows.push({\n        lineIdx: i,\n        periodEnding: periodEnding,\n        dateStr: parts[0],\n        timeStr: parts[1].substring(0,5),\n        ts: pd.getTime(),\n        cumOff: parseFloat(row[1]) || 0,\n        cumSh: parseFloat(row[2]) || 0,\n        cumPk: parseFloat(row[3]) || 0,\n        cumExp: parseFloat(row[4]) || 0\n    });\n}\nrawRows.sort(function(a,b) { return a.ts - b.ts; });\n\nvar gaps = [];\nfor (var ri = 1; ri < rawRows.length; ri++) {\n    var prev = rawRows[ri - 1];\n    var curr = rawRows[ri];\n    var gapMin = Math.round((curr.ts - prev.ts) / 60000);\n    if (gapMin > 6) {\n        gaps.push({\n            date: prev.dateStr,\n            fromDate: prev.dateStr,\n            from: prev.timeStr,\n            fromMins: minsOfDay(new Date(prev.ts)),\n            fromTs: prev.ts,\n            toDate: curr.dateStr,\n            to: curr.timeStr,\n            toMins: minsOfDay(new Date(curr.ts)),\n            toTs: curr.ts,\n            gapMin: gapMin,\n            prevCumOff: prev.cumOff,\n            prevCumSh: prev.cumSh,\n            prevCumPk: prev.cumPk,\n            prevCumExp: prev.cumExp,\n            currCumOff: curr.cumOff,\n            currCumSh: curr.cumSh,\n            currCumPk: curr.cumPk,\n            currCumExp: curr.cumExp,\n            _crossDay: prev.dateStr !== curr.dateStr\n        });\n    }\n}\n\n// Check for trailing/stale gap from the last CSV row to the latest completed 5-minute boundary.\nif (rawRows.length > 0) {\n    var lastRow = rawRows[rawRows.length - 1];\n    var toNow = new Date(Math.floor(now.getTime() / (5 * 60000)) * (5 * 60000) + (5 * 60000 - 1000));\n    var trailingGapMin = Math.round((toNow.getTime() - lastRow.ts) / 60000);\n    if (trailingGapMin > 6) {\n        gaps.push({\n            date: lastRow.dateStr,\n            fromDate: lastRow.dateStr,\n            from: lastRow.timeStr,\n            fromMins: minsOfDay(new Date(lastRow.ts)),\n            fromTs: lastRow.ts,\n            toDate: dateStr(toNow),\n            to: timeStr(toNow),\n            toMins: minsOfDay(toNow),\n            toTs: toNow.getTime(),\n            gapMin: trailingGapMin,\n            prevCumOff: lastRow.cumOff,\n            prevCumSh: lastRow.cumSh,\n            prevCumPk: lastRow.cumPk,\n            prevCumExp: lastRow.cumExp,\n            currCumOff: 0,\n            currCumSh: 0,\n            currCumPk: 0,\n            currCumExp: 0,\n            _trailing: true,\n            _crossDay: lastRow.dateStr !== dateStr(toNow)\n        });\n    }\n}\n\n// Filter to gaps within last 14 days (only gaps HA can potentially fill)\nvar maxGapAge = 14 * 86400 * 1000;\nvar recentGaps = gaps.filter(function(g) { return (now.getTime() - g.fromTs) < maxGapAge; });\nflow.set('haGapCsvData', csvData);\nflow.set('haGapInfo', recentGaps);\nflow.set('haGapDetectedAt', now.toISOString());\nif (recentGaps.length === 0) {\n    return [msg, null];\n}\n// If gaps exist, don't send original csvData to calculate_costs yet.\n// process_ha_and_fill (after gap-fill) will trigger calculate_costs with merged data.\n// This prevents calculate_costs from overwriting the file before gap-fill completes.\nreturn [null, msg, msg];\n",
     "outputs": 2,
     "timeout": "",
     "noerr": 0,
@@ -1105,7 +1036,7 @@
       ],
       [
         "prepare_ha_queries",
-      "s4ik5mqx"
+        "s4ik5mqx"
       ]
     ]
   },
@@ -1115,7 +1046,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Prepare HA Queries",
-    "func": "// Generate HA history requests covering the full datetime span of all detected gaps.\nvar gaps = flow.get('haGapInfo') || [];\nif (gaps.length === 0) return null;\nvar haUrl = 'http://192.168.50.100:8123';\nvar haToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU';\nvar authHeader = 'Bearer ' + haToken;\n\nvar earliestTs = null;\nvar latestTs = null;\ngaps.forEach(function(g) {\n    if (earliestTs === null || g.fromTs < earliestTs) earliestTs = g.fromTs;\n    if (latestTs === null || g.toTs > latestTs) latestTs = g.toTs;\n});\nif (earliestTs === null || latestTs === null) return null;\n// Clip query window to last 11 days (HA short-term recorder window)\nvar elevenDaysAgo = Date.now() - 11 * 86400 * 1000;\nif (earliestTs < elevenDaysAgo) earliestTs = elevenDaysAgo;\nvar startTime = new Date(earliestTs - 60 * 60000).toISOString();\nvar endTime = new Date(latestTs + 60 * 60000).toISOString();\nflow.set('haQueryMeta', { startTime: startTime, endTime: endTime, gaps: gaps });\n\n// Clear any stale partial response set from a previous failed run.\n['offpeak','shoulder','peak','export','export_shoulder','export_peak','export_superpeak'].forEach(function(t) { flow.set('haResp_' + t, undefined); });\n\nvar sensors = [\n    { topic: 'offpeak', entity: 'sensor.energy_import_meter_offpeak' },\n    { topic: 'shoulder', entity: 'sensor.energy_import_meter_shoulder' },\n    { topic: 'peak', entity: 'sensor.energy_import_meter_peak' },\n    { topic: 'export', entity: 'sensor.energy_export_meter_offpeak' },\n    { topic: 'export_shoulder', entity: 'sensor.energy_export_meter_shoulder' },\n    { topic: 'export_peak', entity: 'sensor.energy_export_meter_peak' },\n    { topic: 'export_superpeak', entity: 'sensor.energy_export_meter_superpeak' }\n];\nvar msgs = sensors.map(function(s) {\n    return {\n        payload: '',\n        url: haUrl + '/api/history/period/' + encodeURIComponent(startTime) + '?filter_entity_id=' + s.entity + '&end_time=' + encodeURIComponent(endTime) + '',\n        topic: s.topic,\n        headers: {\n            'Authorization': authHeader\n        }\n    };\n});\n// Only generate queries if gaps fall within the clipped window\nvar effectiveGaps = gaps.filter(function(g) { return g.toTs >= earliestTs; });\nif (effectiveGaps.length === 0) return null;\nreturn msgs.map(function(m) { return [m]; });\n",
+    "func": "// Generate HA history requests covering the full datetime span of all detected gaps.\nvar gaps = flow.get('haGapInfo') || [];\nif (gaps.length === 0) return null;\nvar haUrl = 'http://192.168.50.100:8123';\nvar haToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU';\nvar authHeader = 'Bearer ' + haToken;\n\nvar earliestTs = null;\nvar latestTs = null;\ngaps.forEach(function(g) {\n    if (earliestTs === null || g.fromTs < earliestTs) earliestTs = g.fromTs;\n    if (latestTs === null || g.toTs > latestTs) latestTs = g.toTs;\n});\nif (earliestTs === null || latestTs === null) return null;\n// Query full gap range \u2014 HA returns whatever data is available (short or long-term)\nflow.set('haLongTermStart', earliestTs);\nvar startTime = new Date(earliestTs - 60 * 60000).toISOString();\nvar endTime = new Date(latestTs + 60 * 60000).toISOString();\nflow.set('haQueryMeta', { startTime: startTime, endTime: endTime, gaps: gaps });\n\n// Clear any stale partial response set from a previous failed run.\n['offpeak','shoulder','peak','export','export_shoulder','export_peak','export_superpeak'].forEach(function(t) { flow.set('haResp_' + t, undefined); });\n\nvar sensors = [\n    { topic: 'offpeak', entity: 'sensor.energy_import_meter_offpeak' },\n    { topic: 'shoulder', entity: 'sensor.energy_import_meter_shoulder' },\n    { topic: 'peak', entity: 'sensor.energy_import_meter_peak' },\n    { topic: 'export', entity: 'sensor.energy_export_meter_offpeak' },\n    { topic: 'export_shoulder', entity: 'sensor.energy_export_meter_shoulder' },\n    { topic: 'export_peak', entity: 'sensor.energy_export_meter_peak' },\n    { topic: 'export_superpeak', entity: 'sensor.energy_export_meter_superpeak' }\n];\nvar msgs = sensors.map(function(s) {\n    return {\n        payload: '',\n        url: haUrl + '/api/history/period/' + encodeURIComponent(startTime) + '?filter_entity_id=' + s.entity + '&end_time=' + encodeURIComponent(endTime) + '',\n        topic: s.topic,\n        headers: {\n            'Authorization': authHeader\n        }\n    };\n});\n// Only generate queries if gaps fall within the clipped window\nreturn msgs.map(function(m) { return [m]; });\n",
     "outputs": 7,
     "timeout": "",
     "noerr": 0,
@@ -1250,7 +1181,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Process HA & Fill Gaps",
-    "func": "// Collect HA responses, then fill detected CSV gaps using HA cumulative sensor anchors.\n// Output 0 goes to calculate_costs; output 1 persists the HA-filled 5minelecNEW.csv.\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n}\nvar topic = msg.topic;\nflow.set('haResp_' + topic, msg.payload);\nflow.set('haResp_raw_' + topic + '_len', typeof msg.payload === 'string' ? msg.payload.length : (msg.payload ? 'obj:' + typeof msg.payload : 'null'));\n\nvar needed = ['offpeak', 'shoulder', 'peak', 'export', 'export_shoulder', 'export_peak', 'export_superpeak'];\nvar allReady = needed.every(function(t) { return flow.get('haResp_' + t) !== undefined; });\nif (!allReady) return null;\n\nvar haData = {};\nneeded.forEach(function(t) {\n    haData[t] = flow.get('haResp_' + t);\n    flow.set('haResp_' + t, undefined);\n});\n\nvar csvData = flow.get('haGapCsvData');\nvar gaps = flow.get('haGapInfo') || [];\nif (!csvData || gaps.length === 0) {\n    msg.payload = csvData;\n    return [msg, null];\n}\n\nvar NL = String.fromCharCode(10);\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart.substring(0,5) + ':00'); }\n\nfunction parseHaResponse(resp) {\n    var arr = [];\n    if (!resp) return arr;\n    if (typeof resp === 'string') {\n        try { resp = JSON.parse(resp); } catch(e) { return arr; }\n    }\n    if (!Array.isArray(resp) || resp.length === 0) return arr;\n    var series = Array.isArray(resp[0]) ? resp[0] : resp;\n    if (!Array.isArray(series)) return arr;\n    series.forEach(function(entry) {\n        var rawTs = entry.lu || entry.last_updated || entry.last_changed;\n        var rawVal = entry.s;\n        if (rawVal === undefined || rawVal === null) rawVal = entry.state;\n        if (!rawTs || rawVal === undefined || rawVal === null || rawVal === 'unknown' || rawVal === 'unavailable') return;\n        var dt = new Date(rawTs);\n        var val = parseFloat(rawVal);\n        if (isNaN(dt.getTime()) || isNaN(val)) return;\n        arr.push({ ts: dt.getTime(), val: val });\n    });\n    arr.sort(function(a,b) { return a.ts - b.ts; });\n    return arr;\n}\n\nvar haOff = parseHaResponse(haData.offpeak);\nvar haSh = parseHaResponse(haData.shoulder);\nvar haPk = parseHaResponse(haData.peak);\nvar haExp = parseHaResponse(haData.export);\nvar haExpSh = parseHaResponse(haData.export_shoulder);\nvar haExpPk = parseHaResponse(haData.export_peak);\nvar haExpSp = parseHaResponse(haData.export_superpeak);\n\nvar haOffMap = makeHaMap(haOff);\nvar haShMap = makeHaMap(haSh);\nvar haPkMap = makeHaMap(haPk);\nvar haExpShMap = makeHaMap(haExpSh);\nvar haExpPkMap = makeHaMap(haExpPk);\nvar haExpSpMap = makeHaMap(haExpSp);\nvar haExpMap = makeHaMap(haExp);\n\nfunction makeHaMap(arr) {\n    var map = {};\n    if (!Array.isArray(arr)) return map;\n    arr.forEach(function(e) { map[e.ts] = e.val; });\n    return map;\n}\nfunction findPrevHaVal(arr, ts) {\n    if (!Array.isArray(arr) || arr.length === 0) return undefined;\n    var lo = 0;\n    var hi = arr.length - 1;\n    function sameLocalDay(a, b) {\n        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();\n    }\n    if (ts < arr[0].ts) {\n        var firstDate = new Date(arr[0].ts);\n        var curDate = new Date(ts);\n        if (sameLocalDay(firstDate, curDate)) return 0;\n        return undefined;\n    }\n    if (ts >= arr[hi].ts) {\n        var last = new Date(arr[hi].ts);\n        var cur = new Date(ts);\n        if (!sameLocalDay(last, cur)) return 0;\n        return arr[hi].val;\n    }\n    while (lo <= hi) {\n        var mid = (lo + hi) >> 1;\n        if (arr[mid].ts === ts) return arr[mid].val;\n        if (arr[mid].ts < ts) lo = mid + 1;\n        else hi = mid - 1;\n    }\n    if (hi < 0) return undefined;\n    var prev = arr[hi];\n    var prevDate = new Date(prev.ts);\n    var curDate = new Date(ts);\n    if (!sameLocalDay(prevDate, curDate)) return 0;\n    return prev.val;\n}\nfunction makeHaRow(ts) {\n    var vOff = haOffMap[ts];\n    var vSh = haShMap[ts];\n    var vPk = haPkMap[ts];\n    var vExp = haExpMap[ts];\n    var vExpSh = haExpShMap[ts];\n    var vExpPk = haExpPkMap[ts];\n    var vExpSp = haExpSpMap[ts];\n    if (vOff === undefined) vOff = findPrevHaVal(haOff, ts);\n    if (vSh === undefined) vSh = findPrevHaVal(haSh, ts);\n    if (vPk === undefined) vPk = findPrevHaVal(haPk, ts);\n    if (vExp === undefined) vExp = findPrevHaVal(haExp, ts);\n    if (vExpSh === undefined) vExpSh = findPrevHaVal(haExpSh, ts);\n    if (vExpPk === undefined) vExpPk = findPrevHaVal(haExpPk, ts);\n    if (vExpSp === undefined) vExpSp = findPrevHaVal(haExpSp, ts);\n    if (vOff === undefined || vSh === undefined || vPk === undefined) return null;\n    // Sum all export periods: offpeak + shoulder + peak + superpeak\n    var totalExp = 0;\n    if (vExp !== undefined) totalExp += vExp;\n    if (vExpSh !== undefined) totalExp += vExpSh;\n    if (vExpPk !== undefined) totalExp += vExpPk;\n    if (vExpSp !== undefined) totalExp += vExpSp;\n    return { ts: ts, off: vOff, sh: vSh, pk: vPk, exp: totalExp, ha: true };\n}\n\nvar csvLines = csvData.split(NL);\nwhile (csvLines.length > 0 && csvLines[csvLines.length - 1].trim() === '') csvLines.pop();\n// Normalize: fix rows where datetime != pe_datetime (old bootstrap format)\nfor (var ci = 1; ci < csvLines.length; ci++) {\n    var cp = csvLines[ci].split(',');\n    if (cp.length >= 13) {\n        var dt = (cp[0] || '').trim();\n        var pdt = (cp[12] || '').trim();\n        if (dt && pdt && dt !== pdt) {\n            cp[0] = pdt;\n            csvLines[ci] = cp.join(',');\n        }\n    }\n}\nvar wroteRows = false;\nvar totalInserted = 0;\n\n// Process from latest to earliest so insertion indexes remain valid.\ngaps.slice().sort(function(a,b) { return b.fromTs - a.fromTs; }).forEach(function(gap) {\n    var insertIdx = csvLines.length;\n    if (!gap._trailing) {\n        insertIdx = -1;\n        for (var cl = 1; cl < csvLines.length; cl++) {\n            var parts = csvLines[cl].split(',');\n            if (parts.length < 13) continue;\n            var peParts = (parts[12] || '').trim().split(' ');\n            if (peParts.length < 2) continue;\n            var rowDt = parseLocal(peParts[0], peParts[1]);\n            if (rowDt.getTime() === gap.toTs) { insertIdx = cl; break; }\n        }\n        if (insertIdx < 0) return;\n    }\n\n    var newRows = [];\n    for (var rowTs = gap.fromTs + 5 * 60000; rowTs <= gap.toTs; rowTs += 5 * 60000) {\n        if (!gap._trailing && rowTs >= gap.toTs) continue;\n        if (rowTs <= gap.fromTs || rowTs > gap.toTs) continue;\n        var haRow = makeHaRow(rowTs);\n        if (!haRow) continue;\n        var d = new Date(rowTs);\n        var d2 = new Date(d.getTime() - 1000); var pe = dateStr(d2) + ' ' + timeStr(d2) + ':' + pad2(d2.getSeconds());\n        var row = pe + ','\n            + haRow.off.toFixed(3) + ','\n            + haRow.sh.toFixed(3) + ','\n            + haRow.pk.toFixed(3) + ','\n            + haRow.exp.toFixed(3)\n            + ',0,0,0,0,0,0,0,' + pe + ',0';\n        newRows.push(row);\n    }\n    if (newRows.length > 0) {\n        Array.prototype.splice.apply(csvLines, [insertIdx, 0].concat(newRows));\n        wroteRows = true;\n        totalInserted += newRows.length;\n    }\n});\n\nvar fixedCsv = csvLines.join(NL);\nmsg.payload = fixedCsv;\nflow.set('haGapRowsInserted', totalInserted);\nflow.set('haGapLastFillAt', new Date().toISOString());\nif (wroteRows) {\n    var now = new Date();\n    var ts = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate()) + '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());\n    var fixedMsg = { payload: fixedCsv };\n    node.send([msg, fixedMsg]);\n    return;\n}\nreturn [msg, null];\n",
+    "func": "// Collect HA responses, then fill detected CSV gaps using HA cumulative sensor anchors.\n// Output 0 goes to calculate_costs; output 1 persists the HA-filled 5minelecNEW.csv.\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.constructor && msg.payload.constructor.name === 'Buffer') {\n    msg.payload = msg.payload.toString('utf8');\n}\nvar topic = msg.topic;\nflow.set('haResp_' + topic, msg.payload);\nflow.set('haResp_raw_' + topic + '_len', typeof msg.payload === 'string' ? msg.payload.length : (msg.payload ? 'obj:' + typeof msg.payload : 'null'));\n\nvar needed = ['offpeak', 'shoulder', 'peak', 'export', 'export_shoulder', 'export_peak', 'export_superpeak'];\nvar allReady = needed.every(function(t) { return flow.get('haResp_' + t) !== undefined; });\nif (!allReady) return null;\n\nvar haData = {};\nneeded.forEach(function(t) {\n    haData[t] = flow.get('haResp_' + t);\n    flow.set('haResp_' + t, undefined);\n});\n\nvar csvData = flow.get('haGapCsvData');\nvar gaps = flow.get('haGapInfo') || [];\nif (!csvData || gaps.length === 0) {\n    msg.payload = csvData;\n    return [msg, null];\n}\n\nvar NL = String.fromCharCode(10);\nfunction pad2(n) { return n < 10 ? '0' + n : '' + n; }\nfunction dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }\nfunction timeStr(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()); }\nfunction parseLocal(datePart, timePart) { return new Date(datePart + 'T' + timePart); }\n\nfunction parseHaResponse(resp) {\n    var arr = [];\n    if (!resp) return arr;\n    if (typeof resp === 'string') {\n        try { resp = JSON.parse(resp); } catch(e) { return arr; }\n    }\n    if (!Array.isArray(resp) || resp.length === 0) return arr;\n    var series = Array.isArray(resp[0]) ? resp[0] : resp;\n    if (!Array.isArray(series)) return arr;\n    series.forEach(function(entry) {\n        var rawTs = entry.lu || entry.last_updated || entry.last_changed;\n        var rawVal = entry.s;\n        if (rawVal === undefined || rawVal === null) rawVal = entry.state;\n        if (!rawTs || rawVal === undefined || rawVal === null || rawVal === 'unknown' || rawVal === 'unavailable') return;\n        var dt = new Date(rawTs);\n        var val = parseFloat(rawVal);\n        if (isNaN(dt.getTime()) || isNaN(val)) return;\n        arr.push({ ts: dt.getTime(), val: val });\n    });\n    arr.sort(function(a,b) { return a.ts - b.ts; });\n    return arr;\n}\n\nvar haOff = parseHaResponse(haData.offpeak);\nvar haSh = parseHaResponse(haData.shoulder);\nvar haPk = parseHaResponse(haData.peak);\nvar haExp = parseHaResponse(haData.export);\nvar haExpSh = parseHaResponse(haData.export_shoulder);\nvar haExpPk = parseHaResponse(haData.export_peak);\nvar haExpSp = parseHaResponse(haData.export_superpeak);\n\nvar haOffMap = makeHaMap(haOff);\nvar haShMap = makeHaMap(haSh);\nvar haPkMap = makeHaMap(haPk);\nvar haExpShMap = makeHaMap(haExpSh);\nvar haExpPkMap = makeHaMap(haExpPk);\nvar haExpSpMap = makeHaMap(haExpSp);\nvar haExpMap = makeHaMap(haExp);\n\nfunction makeHaMap(arr) {\n    var map = {};\n    if (!Array.isArray(arr)) return map;\n    arr.forEach(function(e) { map[e.ts] = e.val; });\n    return map;\n}\nfunction findPrevHaVal(arr, ts) {\n    if (!Array.isArray(arr) || arr.length === 0) return undefined;\n    var lo = 0;\n    var hi = arr.length - 1;\n    function sameLocalDay(a, b) {\n        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();\n    }\n    if (ts < arr[0].ts) {\n        var firstDate = new Date(arr[0].ts);\n        var curDate = new Date(ts);\n        if (sameLocalDay(firstDate, curDate)) return 0;\n        return undefined;\n    }\n    if (ts >= arr[hi].ts) {\n        var last = new Date(arr[hi].ts);\n        var cur = new Date(ts);\n        if (!sameLocalDay(last, cur)) return 0;\n        return arr[hi].val;\n    }\n    while (lo <= hi) {\n        var mid = (lo + hi) >> 1;\n        if (arr[mid].ts === ts) return arr[mid].val;\n        if (arr[mid].ts < ts) lo = mid + 1;\n        else hi = mid - 1;\n    }\n    if (hi < 0) return undefined;\n    var prev = arr[hi];\n    var prevDate = new Date(prev.ts);\n    var curDate = new Date(ts);\n    if (!sameLocalDay(prevDate, curDate)) return 0;\n    return prev.val;\n}\nfunction makeHaRow(ts) {\n    var vOff = haOffMap[ts];\n    var vSh = haShMap[ts];\n    var vPk = haPkMap[ts];\n    var vExp = haExpMap[ts];\n    var vExpSh = haExpShMap[ts];\n    var vExpPk = haExpPkMap[ts];\n    var vExpSp = haExpSpMap[ts];\n    if (vOff === undefined) vOff = findPrevHaVal(haOff, ts);\n    if (vSh === undefined) vSh = findPrevHaVal(haSh, ts);\n    if (vPk === undefined) vPk = findPrevHaVal(haPk, ts);\n    if (vExp === undefined) vExp = findPrevHaVal(haExp, ts);\n    if (vExpSh === undefined) vExpSh = findPrevHaVal(haExpSh, ts);\n    if (vExpPk === undefined) vExpPk = findPrevHaVal(haExpPk, ts);\n    if (vExpSp === undefined) vExpSp = findPrevHaVal(haExpSp, ts);\n    if (vOff === undefined || vSh === undefined || vPk === undefined) return null;\n    // Sum all export periods: offpeak + shoulder + peak + superpeak\n    var totalExp = 0;\n    if (vExp !== undefined) totalExp += vExp;\n    if (vExpSh !== undefined) totalExp += vExpSh;\n    if (vExpPk !== undefined) totalExp += vExpPk;\n    if (vExpSp !== undefined) totalExp += vExpSp;\n    return { ts: ts, off: vOff, sh: vSh, pk: vPk, exp: totalExp, ha: true };\n}\n\nvar csvLines = csvData.split(NL);\nwhile (csvLines.length > 0 && csvLines[csvLines.length - 1].trim() === '') csvLines.pop();\n// Normalize: fix rows where datetime != pe_datetime (old bootstrap format)\nfor (var ci = 1; ci < csvLines.length; ci++) {\n    var cp = csvLines[ci].split(',');\n    if (cp.length >= 13) {\n        var dt = (cp[0] || '').trim();\n        var pdt = (cp[12] || '').trim();\n        if (dt && pdt && dt !== pdt) {\n            cp[0] = pdt;\n            csvLines[ci] = cp.join(',');\n        }\n    }\n}\nvar wroteRows = false;\nvar totalInserted = 0;\n\n// Process from latest to earliest so insertion indexes remain valid.\ngaps.slice().sort(function(a,b) { return b.fromTs - a.fromTs; }).forEach(function(gap) {\n    var insertIdx = csvLines.length;\n    if (!gap._trailing) {\n        insertIdx = -1;\n        for (var cl = 1; cl < csvLines.length; cl++) {\n            var parts = csvLines[cl].split(',');\n            if (parts.length < 13) continue;\n            var peParts = (parts[12] || '').trim().split(' ');\n            if (peParts.length < 2) continue;\n            var rowDt = parseLocal(peParts[0], peParts[1]);\n            if (rowDt.getTime() === gap.toTs) { insertIdx = cl; break; }\n        }\n        if (insertIdx < 0) return;\n    }\n\n    var newRows = [];\n    for (var rowTs = gap.fromTs + 5 * 60000; rowTs <= gap.toTs; rowTs += 5 * 60000) {\n        if (!gap._trailing && rowTs >= gap.toTs) continue;\n        if (rowTs <= gap.fromTs || rowTs > gap.toTs) continue;\n        var haRow = makeHaRow(rowTs);\n        if (!haRow) continue;\n        var d = new Date(rowTs); var pe = dateStr(d) + ' ' + timeStr(d);\n        var row = pe + ','\n            + haRow.off.toFixed(3) + ','\n            + haRow.sh.toFixed(3) + ','\n            + haRow.pk.toFixed(3) + ','\n            + haRow.exp.toFixed(3)\n            + ',0,0,0,0,0,0,0,' + pe + ',0';\n        newRows.push(row);\n    }\n    if (newRows.length > 0) {\n        Array.prototype.splice.apply(csvLines, [insertIdx, 0].concat(newRows));\n        wroteRows = true;\n        totalInserted += newRows.length;\n    }\n});\n\nvar fixedCsv = csvLines.join(NL);\nmsg.payload = fixedCsv;\nflow.set('haGapRowsInserted', totalInserted);\nflow.set('haGapLastFillAt', new Date().toISOString());\nif (wroteRows) {\n    var now = new Date();\n    var ts = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate()) + '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());\n    var fixedMsg = { payload: fixedCsv };\n    node.send([msg, fixedMsg]);\n    return;\n}\n// Log gap-fill activity to elecdatalog.txt\nif (totalInserted > 0) {\n    var fs = require('fs');\n    var logPath = '/share/file_notifications/elecdatalog.txt';\n    var logNow = new Date();\n    function lpad2(n) { return n < 10 ? '0' + n : '' + n; }\n    function logDate(d) { return d.getFullYear() + '-' + lpad2(d.getMonth() + 1) + '-' + lpad2(d.getDate()); }\n    function logTime(d) { return lpad2(d.getHours()) + ':' + lpad2(d.getMinutes()) + ':' + lpad2(d.getSeconds()); }\n    var logTs = logDate(logNow) + ' ' + logTime(logNow);\n    var elevenDaysAgo = Date.now() - 11 * 86400 * 1000;\n    var logEntries = [];\n    gaps.forEach(function(gap) {\n        // Determine if this gap was filled (was it within the processing range?)\n        var gapFrom = new Date(gap.fromTs);\n        var gapTo = new Date(gap.toTs);\n        var source = gap.fromTs >= elevenDaysAgo ? 'short-term' : 'long-term';\n        logEntries.push(logTs + ' | GAP-FILL | src=' + source + ' | from=' + logDate(gapFrom) + ' ' + logTime(gapFrom) + ' | to=' + logDate(gapTo) + ' ' + logTime(gapTo) + ' | gap_min=' + gap.gapMin + ' | trailing=' + (gap._trailing ? 'yes' : 'no') + ' | cross_day=' + (gap._crossDay ? 'yes' : 'no'));\n    });\n    logEntries.push(logTs + ' | GAP-FILL | total_inserted=' + totalInserted + ' | rows_from=' + csvLines.length + ' | rows_to=' + (csvLines.length + totalInserted));\n    try {\n        fs.appendFileSync(logPath, logEntries.join(String.fromCharCode(10)) + String.fromCharCode(10));\n    } catch(e) {\n        // Logging failure is non-critical\n    }\n}\nreturn [msg, null];\n",
     "outputs": 2,
     "timeout": "",
     "noerr": 0,
@@ -1311,7 +1242,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Debug Handler",
-    "func": "var vars = ['haGapRowsInserted', 'haGapLastFillAt', 'haGapDetectedAt', 'haGapInfo', 'haQueryMeta', 'haResp_shoulder', 'haResp_peak', 'haResp_export'];\nvar result = {};\nvars.forEach(function(v) {\n    var val = flow.get(v);\n    if (val !== undefined) {\n        if (typeof val === 'object') {\n            result[v] = JSON.stringify(val).substring(0, 3000);\n        } else {\n            result[v] = String(val).substring(0, 3000);\n        }\n    }\n});\nmsg.payload = JSON.stringify(result, null, 2);\nmsg.statusCode = 200;\nreturn msg;",
+    "func": "var vars = ['haGapRowsInserted', 'haGapLastFillAt', 'haGapDetectedAt', 'haGapInfo', 'haQueryMeta', 'haLongTermStart', 'haResp_shoulder', 'haResp_peak', 'haResp_export'];\nvar result = {};\nvars.forEach(function(v) {\n    var val = flow.get(v);\n    if (val !== undefined) {\n        if (typeof val === 'object') {\n            result[v] = JSON.stringify(val).substring(0, 3000);\n        } else {\n            result[v] = String(val).substring(0, 3000);\n        }\n    }\n});\nmsg.payload = JSON.stringify(result, null, 2);\nmsg.statusCode = 200;\nreturn msg;",
     "outputs": 1,
     "noerr": 0,
     "initialize": "",
@@ -1380,7 +1311,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Compare",
-    "func": "var newCsv = msg.payload;\nvar NL = String.fromCharCode(10);\nvar lines = newCsv.split(NL).filter(function(l) { return l.trim().length > 0; });\nvar dataLines = lines.slice(1).filter(function(l) { return l.split(',').length >= 14; });\nvar result = {\n    status: 'ok',\n    new_file: '5minelecNEW.csv',\n    new_total_lines: lines.length,\n    new_data_lines: dataLines.length,\n    version: 'v2.34'\n};\nif (dataLines.length > 0) {\n    result.new_first = dataLines[0];\n    result.new_last = dataLines[dataLines.length - 1];\n}\nmsg.payload = result;\nreturn msg;",
+    "func": "var newCsv = msg.payload;\nvar NL = String.fromCharCode(10);\nvar lines = newCsv.split(NL).filter(function(l) { return l.trim().length > 0; });\nvar dataLines = lines.slice(1).filter(function(l) { return l.split(',').length >= 14; });\nvar result = {\n    status: 'ok',\n    new_file: '5minelecNEW.csv',\n    new_total_lines: lines.length,\n    new_data_lines: dataLines.length,\n    version: 'v2.35'\n};\nif (dataLines.length > 0) {\n    result.new_first = dataLines[0];\n    result.new_last = dataLines[dataLines.length - 1];\n}\nmsg.payload = result;\nreturn msg;",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
@@ -1560,7 +1491,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "Merge & Write",
-    "func": "var NL = String.fromCharCode(10);\nvar seedCsv = flow.get('importSeedData') || '';\nvar currentCsv = msg.payload || '';\n\nfunction parseCsv(csv) {\n    var lines = csv.split(NL).filter(function(l) { return l.trim().length > 0; });\n    var rows = [];\n    for (var i = 1; i < lines.length; i++) {\n        var cols = lines[i].split(',');\n        if (cols.length >= 14) {\n            rows.push(cols);\n        }\n    }\n    return rows;\n}\n\nvar seedRows = parseCsv(seedCsv);\nvar currentRows = parseCsv(currentCsv);\n\n// Build map from current CSV\nvar currentMap = {};\nfor (var i = 0; i < currentRows.length; i++) {\n    currentMap[currentRows[i][0]] = true;\n}\n\n// Merge: keep all current rows, add seed rows not already present\nvar mergedRows = [];\nfor (var i = 0; i < currentRows.length; i++) {\n    mergedRows.push(currentRows[i].join(','));\n}\nfor (var i = 0; i < seedRows.length; i++) {\n    var dt = seedRows[i][0];\n    if (!currentMap[dt]) {\n        mergedRows.push(seedRows[i].join(','));\n    }\n}\n\n// Sort by datetime\nmergedRows.sort();\n\nvar header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\nvar mergedCsv = header + NL + mergedRows.join(NL);\n\nvar result = {\n    status: 'ok',\n    message: 'Import complete',\n    seed_rows: seedRows.length,\n    current_rows: currentRows.length,\n    merged_rows: mergedRows.length,\n    version: 'v2.34'\n};\n\n// Clean up flow variable\nflow.set('importSeedData', null);\n\nreturn [\n    {payload: mergedCsv},\n    {payload: result, req: msg.req, res: msg.res}\n];",
+    "func": "var NL = String.fromCharCode(10);\nvar seedCsv = flow.get('importSeedData') || '';\nvar currentCsv = msg.payload || '';\nvar replaceMode = msg.req && msg.req.query && msg.req.query.replace === 'true';\n\nfunction parseCsv(csv) {\n    var lines = csv.split(NL).filter(function(l) { return l.trim().length > 0; });\n    var rows = [];\n    for (var i = 1; i < lines.length; i++) {\n        var cols = lines[i].split(',');\n        if (cols.length >= 14) {\n            rows.push(cols);\n        }\n    }\n    return rows;\n}\n\nvar seedRows = parseCsv(seedCsv);\nvar currentRows = replaceMode ? [] : parseCsv(currentCsv);\n\n// Build map from current CSV\nvar currentMap = {};\nfor (var i = 0; i < currentRows.length; i++) {\n    currentMap[currentRows[i][0]] = true;\n}\n\n// Merge: keep all current rows, add seed rows not already present\nvar mergedRows = [];\nfor (var i = 0; i < currentRows.length; i++) {\n    mergedRows.push(currentRows[i].join(','));\n}\nfor (var i = 0; i < seedRows.length; i++) {\n    var dt = seedRows[i][0];\n    if (!currentMap[dt] || replaceMode) {\n        mergedRows.push(seedRows[i].join(','));\n    }\n}\n\n// Sort by datetime\nmergedRows.sort();\n\nvar header = 'datetime,offpeak,shoulder,peak,export,grid_load,load_today,input_today,price1,price2,price3,price4,pe_datetime,gen';\nvar mergedCsv = header + NL + mergedRows.join(NL);\n\nvar result = {\n    status: 'ok',\n    message: 'Import complete',\n    seed_rows: seedRows.length,\n    current_rows: currentRows.length,\n    merged_rows: mergedRows.length,\n    version: 'v2.35'\n};\n\n// Clean up flow variable\nflow.set('importSeedData', null);\n\nreturn [\n    {payload: mergedCsv},\n    {payload: result, req: msg.req, res: msg.res}\n];",
     "outputs": 2,
     "noerr": 0,
     "x": 1060,
@@ -1605,6 +1536,73 @@
         "ha_rest_api_notify"
       ]
     ]
+  },
+  {
+    "id": "logger_http_in",
+    "type": "http in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "GET Log",
+    "url": "/api/log",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 1360,
+    "wires": [
+      [
+        "logger_read_file"
+      ]
+    ]
+  },
+  {
+    "id": "logger_read_file",
+    "type": "file in",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Read elecdatalog.txt",
+    "filename": "/share/file_notifications/elecdatalog.txt",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "utf8",
+    "allProps": false,
+    "x": 360,
+    "y": 1360,
+    "wires": [
+      [
+        "logger_func"
+      ]
+    ]
+  },
+  {
+    "id": "logger_func",
+    "type": "function",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Format Log Response",
+    "func": "var content = msg.payload;\nif (msg.error) {\n    msg.payload = { error: 'Log file not found: ' + msg.error.message };\n    msg.statusCode = 404;\n} else {\n    msg.payload = { content: content, lines: content.split(String.fromCharCode(10)).length };\n}\nmsg.headers = {};\nmsg.headers['content-type'] = 'application/json';\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "x": 540,
+    "y": 1360,
+    "wires": [
+      [
+        "logger_http_resp"
+      ]
+    ]
+  },
+  {
+    "id": "logger_http_resp",
+    "type": "http response",
+    "z": "tab_energy_retailer_comparison",
+    "g": "group_energy_retailer_comparison",
+    "name": "Log Response",
+    "statusCode": "",
+    "headers": {},
+    "x": 720,
+    "y": 1360,
+    "wires": []
   }
 ]
-
