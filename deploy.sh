@@ -122,13 +122,13 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
          --data-urlencode "name_4=CovaU SolarMax" \
          --data-urlencode "model_4=fixed_tou" \
          --data-urlencode "dsc_4=1.52" \
-         --data-urlencode "off_pk_4=0.2802" \
+         --data-urlencode "off_pk_4=0" \
          --data-urlencode "sh_pk_4=0.1650" \
          --data-urlencode "pk_pk_4=0.6139" \
          --data-urlencode "sp_fit_4=0.15" \
          --data-urlencode "sp_limit_4=30" \
-         --data-urlencode "off_s_4=6" \
-         --data-urlencode "off_e_4=11" \
+         --data-urlencode "off_s_4=11" \
+         --data-urlencode "off_e_4=14" \
          --data-urlencode "pk_s_4=15" \
          --data-urlencode "pk_e_4=21" \
          --data-urlencode "sp_s_4=18" \
@@ -137,6 +137,9 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
          --data-urlencode "pk_fit_e_4=21" \
          --data-urlencode "sp_fit_s_4=18" \
          --data-urlencode "sp_fit_e_4=21" \
+         --data-urlencode "ev_s_4=6" \
+         --data-urlencode "ev_e_4=11" \
+         --data-urlencode "ev_pk_4=0.2802" \
          --data-urlencode "off_limit_4=50" \
          --data-urlencode "billing_day_4=4" \
         --data-urlencode "name_5=Amber" \
