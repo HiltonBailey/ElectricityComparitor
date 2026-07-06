@@ -72,7 +72,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -X POST "$NR_URL/endpoint/api/retailer-config/save" \
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
-         --data-urlencode "rowCount=6" \
+         --data-urlencode "rowCount=7" \
         --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
@@ -163,6 +163,21 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
          --data-urlencode "sp_s_6=18" \
          --data-urlencode "sp_e_6=21" \
          --data-urlencode "billing_day_6=4" \
+         --data-urlencode "name_7=Globird Four4Free" \
+         --data-urlencode "model_7=fixed_tou" \
+         --data-urlencode "dsc_7=1.30174" \
+         --data-urlencode "off_pk_7=0" \
+         --data-urlencode "sh_pk_7=0.36385" \
+         --data-urlencode "pk_pk_7=0.58152" \
+         --data-urlencode "pk_fit_7=0.08" \
+         --data-urlencode "off_s_7=11" \
+         --data-urlencode "off_e_7=15" \
+         --data-urlencode "pk_s_7=16" \
+         --data-urlencode "pk_e_7=23" \
+         --data-urlencode "pk_fit_s_7=16" \
+         --data-urlencode "pk_fit_e_7=23" \
+         --data-urlencode "off_limit_7=50" \
+         --data-urlencode "billing_day_7=4" \
          -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else
