@@ -72,7 +72,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -X POST "$NR_URL/endpoint/api/retailer-config/save" \
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
-        --data-urlencode "rowCount=5" \
+         --data-urlencode "rowCount=6" \
         --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
@@ -141,8 +141,23 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "dsc_5=1.76" \
         --data-urlencode "sub_5=25" \
         --data-urlencode "exp_rate_5=1" \
-        --data-urlencode "billing_day_5=4" \
-        -o /dev/null -w "%{http_code}")
+         --data-urlencode "billing_day_5=4" \
+         --data-urlencode "name_6=Globird New VPP" \
+         --data-urlencode "model_6=fixed_tou" \
+         --data-urlencode "dsc_6=1.584" \
+         --data-urlencode "sh_pk_6=0.407" \
+         --data-urlencode "pk_pk_6=0.528" \
+         --data-urlencode "pk_fit_6=0.02" \
+         --data-urlencode "sp_fit_6=0.10" \
+         --data-urlencode "sp_limit_6=15" \
+         --data-urlencode "off_s_6=11" \
+         --data-urlencode "off_e_6=14" \
+         --data-urlencode "pk_s_6=16" \
+         --data-urlencode "pk_e_6=23" \
+         --data-urlencode "sp_s_6=18" \
+         --data-urlencode "sp_e_6=21" \
+         --data-urlencode "billing_day_6=4" \
+         -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else
     echo "Failed — HTTP $HTTP_CODE"
