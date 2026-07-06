@@ -941,7 +941,7 @@
     "z": "tab_energy_retailer_comparison",
     "g": "group_energy_retailer_comparison",
     "name": "GET AEMO History",
-    "method": "GET",
+    "method": "",
     "ret": "obj",
     "paytoqs": "ignore",
     "url": "",
