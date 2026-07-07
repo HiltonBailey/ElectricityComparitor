@@ -61,6 +61,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Try/catch + empty check restored in handler (v2.43)**: `Object.keys(null)` crash fixed in `daily_report_handler_f`.
 - **`flow.set('dailySummary')` moved before early returns (v2.43)**: Gap/plateau paths no longer skip storing dailySummary, fixing stale data in report.
 - **Minimum row guard (v2.44)**: `detect_gaps_for_ha` requires ≥50 data rows to prevent processing a truncated CSV (e.g., overwritten by HA data logger notification header). Returns `null` instead of gap-filling and destroying historical data.
+- **FlowPower equilibrium removed (v2.45)**: `calculate_costs` no longer assumes battery discharge = `(load+export)-(solar+import)` and adds it back to FlowPower import. Battery charge/discharge columns are `unavailable` in practice, so the model was unsound and made FlowPower non-comparable (others costed on actual import, FlowPower on a no-battery basis). FlowPower now uses **actual grid import** (`adjImport = totalImport`) and its guaranteed export is **capped by real FIT-window surplus** (`adjExport = fixed_export>0 ? min(fixed_export, totalExport+expOutside45c) : totalExport+expOutside45c`). Applied in both daily-summary and 5-min-detail blocks. FlowPower is now compared on the same actual profile as other retailers, keeping its high `sp_fit` advantage and only crediting export you truly had surplus for.
 - **daily-report returns raw HTML (v2.44)**: Changed `Content-Type` to `text/html` and returns HTML directly (not JSON-wrapped). Iframe in HA dashboard now renders tables instead of showing raw JSON text.
 - **`patch_live_solar.py` accepts CLI arg (v2.44)**: Fixed hardcoded `LIVE_PATH` to use `sys.argv[1]`, outputs to `{input}.patched`. Previously ignored its argument.
 - **CSV recovered from backup (v2.44)**: `5minelecNEW.csv` destroyed by HA data logger (159k→3 rows). Restored from backup (102k rows, Dec 19–Jul 7), solar re-patched for 42 days.
@@ -115,7 +116,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
 - `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
 - `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.44)
+- `VERSION`: Current version (v2.45)
 - `AGENTS.md`: This file — session continuity for opencode agents
 - `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
 
