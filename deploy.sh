@@ -73,7 +73,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
          --data-urlencode "rowCount=7" \
-        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day" \
+        --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,glo_rebate" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
         --data-urlencode "dsc_1=1.3419" \
@@ -103,8 +103,10 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "pk_fit_2=0.22" \
         --data-urlencode "pk_s_2=17" \
         --data-urlencode "pk_e_2=21" \
-        --data-urlencode "billing_day_2=4" \
-        --data-urlencode "name_3=Globird VPP" \
+         --data-urlencode "billing_day_2=4" \
+         --data-urlencode "glo_rebate_2=0" \
+         --data-urlencode "name_3=Globird VPP" \
+         --data-urlencode "glo_rebate_3=1" \
         --data-urlencode "model_3=fixed_tou" \
         --data-urlencode "dsc_3=1.32" \
         --data-urlencode "sh_pk_3=0.363" \

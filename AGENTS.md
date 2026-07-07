@@ -52,6 +52,7 @@ Multi-retailer electricity cost comparison system comparing FlowPower against Or
 - **Retailer editor enhanced (v2.38)**: Added blank editable row at bottom for adding new retailers. Globird Four4Free added as 7th retailer (fixed_tou, $1.30174 DSC, $0.58152 pk 16-23, $0.36385 sh, first 50kWh off-peak free, $0.08 FIT 16-23).
 - **`prevOff` day-boundary reset fixed (v2.38)**: `csvByDate` building loop in `calculate_costs` incorrectly reset `prevExport/prevOff/prevSh/prevPk` to 0 at each day change, causing the first 5-min interval of each day to report the entire cumulative value as a single interval's import. Removed the reset — prev values now carry across day boundaries (matching the dailySummary loop which correctly kept prev values). Also removed a dead duplicate `if (rowDateStr !== prevDay)` block.
 - **`deploy.sh` updated (v2.38)**: Changed `rowCount=6` to `rowCount=7`. Added Globird Four4Free seed data at row 7. Redeploys now preserve all 7 retailers.
+- **`glo_rebate` config column added (v2.39)**: New column `glo_rebate` in retailer_config.csv controls the $1 evening rebate (applied if evening import < 0.09 kWh). Globird VPP gets `glo_rebate=1`; all other retailers (including Globird Four4Free) get `0`. The code now checks `r.glo_rebate > 0` instead of `r.name.indexOf('Globird')`. Updated all config headers: `retailer_config_template`, `save_config_handler_1`, `serve_config_page_74a84a79`, and `deploy.sh`.
 
 ### In Progress
 - (none)
