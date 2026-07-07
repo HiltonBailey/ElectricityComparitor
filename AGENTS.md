@@ -115,3 +115,20 @@ See `DEPLOY.md` for the complete guide. In summary:
 
 ## Retailer Config Editor
 A web-based editor for retailer rates and TOU periods is available at `http://192.168.50.100:1880/endpoint/api/retailer-editor`. Changes are saved to `/share/retailer_config.csv` on HA and take effect on the next 5-min cycle. The editor is preferred over editing the template node directly — `deploy.sh` auto-seeds the file on first deploy.
+
+## CSV Column Layout (5minelecNEW.csv)
+14 columns, written by HA template (data logger) and read by `calculate_costs` by index:
+`datetime,offpeak,shoulder,peak,export,bat_charge,bat_charge2,bat_discharge,house_load,gen_price,fit_price,aemo_price,pe_datetime,solar_gen`
+- Col 0: timestamp (`:30` from logger, `:59` from flow gap-fill)
+- Col 1-3: cumulative import kWh per TOU period
+- Col 4: grid daily export energy (resets daily)
+- Col 5: foxess_bat_charge (battery charging)
+- Col 6: foxess_bat_charge duplicate (same sensor)
+- Col 7: foxess_bat_discharge (battery discharging)
+- Col 8: foxmodbus_load_energy_today (cumulative house load)
+- Col 9: home_general_price.spot_per_kwh (general import spot price)
+- Col 10: home_feed_in_price.spot_per_kwh (feed-in tariff spot price)
+- Col 11: aemo_nemweb_nsw1_realtime_price (AEMO wholesale)
+- Col 12: period-ending timestamp (`:59`)
+- Col 13: foxsys_total_solar_generation (solar generation)  
+Code reads `row[1-4]` and `row[8]` as cumulative values, `row[11]` as AEMO price.
