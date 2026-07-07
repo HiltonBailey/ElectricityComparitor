@@ -2,11 +2,14 @@
 
 ## HA Dashboard: Updating Only Energy Retailer Views
 
-The Power Dashboard (`url_path: power-dashboard`) contains 10 tabs. Only
-the two Energy Retailer views should ever be modified:
+The Energy Retailer Dashboard (`url_path: energy-retailer-dashboard`) is a
+dedicated dashboard with 3 views. Only the first two should ever be modified:
 
 1. **Energy Retailer Costs** (path: `testing`)
 2. **Energy Retailer Charts** (path: `energy-retailer-charts`)
+
+The third view (path: `energy-retailer-config`, retailer config editor) is
+left untouched.
 
 **Never update or overwrite the full dashboard config.** Instead, fetch the
 current config, replace only those two views by matching their `path` field,
@@ -45,7 +48,7 @@ async function wsCmd(type, payload = {}) {
 }
 
 // 1. Fetch current config
-const getR = await wsCmd('lovelace/config', { url_path: 'power-dashboard' });
+const getR = await wsCmd('lovelace/config', { url_path: 'energy-retailer-dashboard' });
 const cfg = getR.result;
 
 // 2. Replace views by path (never by index)
@@ -57,7 +60,7 @@ for (let i = 0; i < cfg.views.length; i++) {
 }
 
 // 3. Save
-await wsCmd('lovelace/config/save', { url_path: 'power-dashboard', config: cfg });
+await wsCmd('lovelace/config/save', { url_path: 'energy-retailer-dashboard', config: cfg });
 ```
 
 Key rules:
@@ -67,10 +70,14 @@ Key rules:
   the entire dashboard config. Always use WebSocket `lovelace/config/save`
   with the full existing config plus your changes.
 
-### Two-View Config Sources
+### Config Sources
+
+The two views are defined in separate YAML files:
 
 - `dashboard.yaml` — Energy Retailer Costs view (path: `testing`)
 - `dashboard-charts.yaml` — Energy Retailer Charts view (path: `energy-retailer-charts`)
+
+Apply both to the `energy-retailer-dashboard` (`/energy-retailer-dashboard/testing`).
 
 When generating the view objects, convert YAML → JSON, ensuring:
 - `heading` cards use `{ type: 'heading', heading: '...' }`
@@ -144,8 +151,8 @@ those would overwrite other tabs.
 
 After updating:
 
-- [ ] HA: All power dashboard tabs still present (check via HA or re-fetch config)
-- [ ] HA: Energy Retailer Costs view renders HTML reports correctly
+- [ ] HA: `energy-retailer-dashboard` still has all 3 views (`testing`, `energy-retailer-charts`, `energy-retailer-config`)
+- [ ] HA: Energy Retailer Costs view renders iframe-based daily reports
 - [ ] HA: Energy Retailer Charts view shows apexcharts cards
 - [ ] NR: Only `tab_energy_retailer_comparison` tab updated (check Node-RED editor)
 - [ ] NR: Sensors updating on next 5-min cycle
