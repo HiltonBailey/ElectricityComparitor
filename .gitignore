@@ -28,5 +28,16 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
+*.bak_acgap_*
 .tmp.driveupload/
 .tmp.drivedownload/
+
+# Secrets
+token.txt
+
+# Local backups & logs
+backup/
+terminal_logs/
+
+# Large data files (>20MB)
+foxess_full_history.csv

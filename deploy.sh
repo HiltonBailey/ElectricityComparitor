@@ -84,13 +84,13 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "sp_s_1=17.5" \
         --data-urlencode "sp_e_1=19.5" \
         --data-urlencode "off_fit_s_1=17.5" \
-        --data-urlencode "off_fit_e_1=19.5" \
+        --data-urlencode "off_fit_e_1=21.0" \
         --data-urlencode "sh_fit_s_1=17.5" \
-        --data-urlencode "sh_fit_e_1=19.5" \
+        --data-urlencode "sh_fit_e_1=21.0" \
         --data-urlencode "pk_fit_s_1=17.5" \
-        --data-urlencode "pk_fit_e_1=19.5" \
+        --data-urlencode "pk_fit_e_1=21.0" \
         --data-urlencode "sp_fit_s_1=17.5" \
-        --data-urlencode "sp_fit_e_1=19.5" \
+        --data-urlencode "sp_fit_e_1=21.0" \
         --data-urlencode "fixed_export_1=18" \
         --data-urlencode "billing_day_1=4" \
         --data-urlencode "name_2=Origin Loop Max" \
