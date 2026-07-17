@@ -72,7 +72,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -X POST "$NR_URL/endpoint/api/retailer-config/save" \
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
-          --data-urlencode "rowCount=7" \
+          --data-urlencode "rowCount=9" \
         --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,glo_rebate" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
@@ -200,6 +200,44 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "sp_fit_e_7=21" \
         --data-urlencode "billing_day_7=4" \
         --data-urlencode "glo_rebate_7=0" \
+        --data-urlencode "name_8=Freedom Switched On 2.2 - Plain" \
+        --data-urlencode "model_8=fixed_tou" \
+        --data-urlencode "dsc_8=1.1990" \
+        --data-urlencode "off_pk_8=0.2493" \
+        --data-urlencode "sh_pk_8=0.1487" \
+        --data-urlencode "pk_pk_8=0.5640" \
+        --data-urlencode "off_fit_8=0.0483" \
+        --data-urlencode "sh_fit_8=0.0200" \
+        --data-urlencode "pk_fit_8=0.0915" \
+        --data-urlencode "off_s_8=20" \
+        --data-urlencode "off_e_8=8" \
+        --data-urlencode "pk_s_8=16" \
+        --data-urlencode "pk_e_8=20" \
+        --data-urlencode "ev_s_8=20" \
+        --data-urlencode "ev_e_8=8" \
+        --data-urlencode "ev_pk_8=0.2493" \
+        --data-urlencode "billing_day_8=4" \
+        --data-urlencode "name_9=Freedom Solar Sharer" \
+        --data-urlencode "model_9=fixed_tou" \
+        --data-urlencode "dsc_9=1.1883" \
+        --data-urlencode "off_pk_9=0" \
+        --data-urlencode "sh_pk_9=0.1836" \
+        --data-urlencode "pk_pk_9=0.5810" \
+        --data-urlencode "off_fit_9=0.02" \
+        --data-urlencode "sh_fit_9=0.02" \
+        --data-urlencode "pk_fit_9=0.02" \
+        --data-urlencode "sp_fit_9=0.02" \
+        --data-urlencode "off_s_9=11" \
+        --data-urlencode "off_e_9=14" \
+        --data-urlencode "pk_s_9=14" \
+        --data-urlencode "pk_e_9=16" \
+        --data-urlencode "sp_s_9=16" \
+        --data-urlencode "sp_e_9=20" \
+        --data-urlencode "ev_s_9=20" \
+        --data-urlencode "ev_e_9=8" \
+        --data-urlencode "ev_pk_9=0.2664" \
+        --data-urlencode "off_limit_9=24" \
+        --data-urlencode "billing_day_9=4" \
          -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else
