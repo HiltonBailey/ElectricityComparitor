@@ -161,7 +161,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "sp_fit_s_4=18" \
         --data-urlencode "sp_fit_e_4=21" \
         --data-urlencode "billing_day_4=4" \
-        --data-urlencode "glo_rebate_4=0" \
+        --data-urlencode "glo_rebate_4=1" \
         --data-urlencode "energymadeeasy_planid_4=" \
         --data-urlencode "name_5=Globird Four4Free" \
         --data-urlencode "model_5=fixed_tou" \
