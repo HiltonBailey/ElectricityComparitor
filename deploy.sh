@@ -102,12 +102,12 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "name_2=Origin Battery Starter" \
         --data-urlencode "model_2=fixed_tou" \
         --data-urlencode "dsc_2=1.2567" \
-        --data-urlencode "off_pk_2=0.1870" \
+        --data-urlencode "off_pk_2=0.3300" \
         --data-urlencode "sh_pk_2=0" \
-        --data-urlencode "pk_pk_2=0.5390" \
+        --data-urlencode "pk_pk_2=0.5731" \
         --data-urlencode "off_fit_2=0.0500" \
         --data-urlencode "sh_fit_2=0" \
-        --data-urlencode "pk_fit_2=0.2200" \
+        --data-urlencode "pk_fit_2=0.1800" \
         --data-urlencode "sp_fit_2=0" \
         --data-urlencode "sp_limit_2=0" \
         --data-urlencode "pk_s_2=17" \
