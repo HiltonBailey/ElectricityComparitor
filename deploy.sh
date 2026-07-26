@@ -150,8 +150,6 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "off_e_4=14" \
         --data-urlencode "pk_s_4=16" \
         --data-urlencode "pk_e_4=23" \
-        --data-urlencode "sh_s_4=14" \
-        --data-urlencode "sh_e_4=16" \
         --data-urlencode "sp_s_4=18" \
         --data-urlencode "sp_e_4=21" \
         --data-urlencode "off_fit_s_4=23" \
