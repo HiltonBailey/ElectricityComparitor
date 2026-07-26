@@ -72,7 +72,7 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         -X POST "$NR_URL/endpoint/api/retailer-config/save" \
         -u "$NR_USER:$NR_PASS" \
         -H "Content-Type: application/x-www-form-urlencoded" \
---data-urlencode "rowCount=3" \
+--data-urlencode "rowCount=4" \
         --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,glo_rebate,energymadeeasy_planid" \
         --data-urlencode "name_1=FlowPower" \
         --data-urlencode "model_1=hybrid" \
@@ -135,6 +135,36 @@ if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
         --data-urlencode "billing_day_3=4" \
         --data-urlencode "glo_rebate_3=0" \
         --data-urlencode "energymadeeasy_planid_3=" \
+        --data-urlencode "name_4=ZEROHERO - VPP" \
+        --data-urlencode "model_4=fixed_tou" \
+        --data-urlencode "dsc_4=1.584" \
+        --data-urlencode "off_pk_4=0" \
+        --data-urlencode "sh_pk_4=0.407" \
+        --data-urlencode "pk_pk_4=0.528" \
+        --data-urlencode "off_fit_4=0" \
+        --data-urlencode "sh_fit_4=0.02" \
+        --data-urlencode "pk_fit_4=0.02" \
+        --data-urlencode "sp_fit_4=0.15" \
+        --data-urlencode "sp_limit_4=15" \
+        --data-urlencode "off_s_4=23" \
+        --data-urlencode "off_e_4=14" \
+        --data-urlencode "pk_s_4=16" \
+        --data-urlencode "pk_e_4=23" \
+        --data-urlencode "sh_s_4=14" \
+        --data-urlencode "sh_e_4=16" \
+        --data-urlencode "sp_s_4=18" \
+        --data-urlencode "sp_e_4=21" \
+        --data-urlencode "off_fit_s_4=23" \
+        --data-urlencode "off_fit_e_4=16" \
+        --data-urlencode "sh_fit_s_4=16" \
+        --data-urlencode "sh_fit_e_4=23" \
+        --data-urlencode "pk_fit_s_4=16" \
+        --data-urlencode "pk_fit_e_4=23" \
+        --data-urlencode "sp_fit_s_4=18" \
+        --data-urlencode "sp_fit_e_4=21" \
+        --data-urlencode "billing_day_4=4" \
+        --data-urlencode "glo_rebate_4=0" \
+        --data-urlencode "energymadeeasy_planid_4=" \
          -o /dev/null -w "%{http_code}")
     echo "Config seed: HTTP $SEED_CODE"
 else
