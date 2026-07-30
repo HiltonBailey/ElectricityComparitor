@@ -246,6 +246,7 @@ def calculate_costs(intervals, retailers):
                 'intervals': 0, 'lastTime': '', 'totalImport': 0.0, 'totalExport': 0.0,
                 'import': 0.0, 'export': 0.0, 'spExportUsed': 0.0,
                 'hr18': 0.0, 'hr19': 0.0, 'hr20': 0.0,
+                'he18': 0.0, 'he19': 0.0, 'he20': 0.0,
                 'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0,
                 'spExportKwh': 0.0, 'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0,
             }
@@ -256,9 +257,9 @@ def calculate_costs(intervals, retailers):
                 d = dd[r['name']]
                 d['intervals'] += 1; d['lastTime'] = iv['time']
                 d['totalImport'] += ti; d['totalExport'] += ek
-                if 18 <= h < 19: d['hr18'] += ti
-                elif 19 <= h < 20: d['hr19'] += ti
-                elif 20 <= h < 21: d['hr20'] += ti
+                if 18 <= h < 19: d['hr18'] += ti; d['he18'] += ek
+                elif 19 <= h < 20: d['hr19'] += ti; d['he19'] += ek
+                elif 20 <= h < 21: d['hr20'] += ti; d['he20'] += ek
                 if r['model'] == 'fixed_tou':
                     _fixed_tou_interval(d, r, h, ti, ek)
                 elif r['model'] == 'hybrid':
@@ -309,7 +310,7 @@ def calculate_costs(intervals, retailers):
             
             ri = round(d['import'], 2); re = round(d['export'], 2); rd = round(r.get('dsc', 0), 2)
             gr = r.get('glo_rebate', '0')
-            if float(gr) > 0 and d['hr18'] < 0.03 and d['hr19'] < 0.03 and d['hr20'] < 0.03:
+            if float(gr) > 0 and (d['hr18'] - d['he18']) < 0.03 and (d['hr19'] - d['he19']) < 0.03 and (d['hr20'] - d['he20']) < 0.03:
                 reb = 1.00
             else: reb = 0.0
             d['gloRebate'] = reb; d['net'] = round(ri - re + rd - reb, 2)
@@ -326,14 +327,14 @@ def calculate_costs(intervals, retailers):
     for r in [x for x in retailers if x['model'] in ('fixed_tou', 'hybrid')]:
         fm = {}
         for date_str in sorted(iv_by_date.keys()):
-            outs = []; spu = 0; hr18 = hr19 = hr20 = 0.0; tik = tek = tic = tec = 0.0
+            outs = []; spu = 0; hr18 = hr19 = hr20 = he18 = he19 = he20 = 0.0; tik = tek = tic = tec = 0.0
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
             for iv in iv_by_date[date_str]:
                 h = iv['h']; i_kwh = iv['i_kwh']; e_kwh = iv['e_kwh']
-                if 18 <= h < 19: hr18 += i_kwh
-                elif 19 <= h < 20: hr19 += i_kwh
-                elif 20 <= h < 21: hr20 += i_kwh
+                if 18 <= h < 19: hr18 += i_kwh; he18 += e_kwh
+                elif 19 <= h < 20: hr19 += i_kwh; he19 += e_kwh
+                elif 20 <= h < 21: hr20 += i_kwh; he20 += e_kwh
                 tik += i_kwh; tek += e_kwh
                 if r['model'] == 'fixed_tou':
                     ir = r.get('sh_pk', 0); tou = 'Sho'
@@ -375,13 +376,14 @@ def calculate_costs(intervals, retailers):
                 tic += ic; tec += ec
                 outs.append({'time': iv['time'][:5], 'tou': tou, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
                              'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)})
-            reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.03 and hr19 < 0.03 and hr20 < 0.03) else 0.0
+            reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and (hr18 - he18) < 0.03 and (hr19 - he19) < 0.03 and (hr20 - he20) < 0.03) else 0.0
             nt = round(tic - tec + r.get('dsc', 0) - reb, 2)
             outs.append({'time': 'TOTAL', 'ik': round(tik, 3), 'ek': round(tek, 3),
                          'ic': round(tic, 3), 'ec': round(tec, 3),
                          'dsc': r.get('dsc', 0), 'rebate': reb, 'net': nt,
-                         'hr18': round(hr18, 3), 'hr19': round(hr19, 3), 'hr20': round(hr20, 3)})
-            fm[date_str] = {'intervals': outs, 'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'net': nt, 'dsc': r.get('dsc', 0), 'rebate': reb}}
+                         'hr18': round(hr18, 3), 'hr19': round(hr19, 3), 'hr20': round(hr20, 3),
+                         'he18': round(he18, 3), 'he19': round(he19, 3), 'he20': round(he20, 3)})
+            fm[date_str] = {'intervals': outs, 'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'he18': he18, 'he19': he19, 'he20': he20, 'net': nt, 'dsc': r.get('dsc', 0), 'rebate': reb}}
         five_min_detail[r['name']] = fm
     
     return daily_data, daily_summary, chart_data, five_min_detail
