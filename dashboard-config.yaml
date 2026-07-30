@@ -10,6 +10,6 @@ sections:
         style: "width:100vw;"
         title: Retailer Configuration Editor
         content: |
-          <iframe src="http://192.168.50.100:1880/endpoint/api/retailer-editor" style="width:100%;height:1200px;border:none;border-radius:6px"></iframe>
+           <iframe src="http://192.168.50.161:8080/api/retailer-config" style="width:100%;height:1200px;border:none;border-radius:6px"></iframe>
         grid_options:
           columns: full

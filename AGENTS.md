@@ -1,151 +1,81 @@
 # Project: ElectricityRetailerComparison
 
 ## Goal
-Multi-retailer electricity cost comparison system comparing FlowPower against Origin/Globird/CovaU/Amber, integrated as a dynamic Node-RED flow with HA dashboard, deployed selectively via `PUT /flow/:id`.
+Multi-retailer electricity cost comparison system comparing FlowPower against Origin/Globird/ZEROHERO/Flow/AGL. Cost calculation and reporting handled by a Python server (`energy_server.py`) running on the n8n LXC (192.168.50.161:8080). HA Dashboard fetches data from the Python server via HTTP. Node‑RED handles only CSV gap-filling.
 
-## Constraints & Preferences
-- Three pricing models: FlowPower (hybrid), Amber (variable), Fixed TOU (Origin/Globird/CovaU)
-- Script tags stripped by `custom:html-card` — `<iframe>` used instead for the 5-min interactive report
-- Node-RED `httpNodeRoot` = `/endpoint`; HTTP nodes served under `/endpoint/`
-- HA at http://192.168.50.100:8123, Node-RED admin API on port 1880 (behind nginx with basic auth `stilgar` / `Ha0118021669`)
-- **No references to `5minelec.csv`**: HA data logger's `5minelec.csv` is NOT used by the flow. The working file is `5minelecNEW.csv` only. Copy mechanism (previously `inject_copy_csv` / HTTP GET `/endpoint/api/copy-csv`) was removed. Historical data can be imported from `newseed.csv` via `GET /endpoint/api/import-seed`. **`newseed.csv` is a critical backup — never delete or modify it.** If `5minelecNEW.csv` is empty or missing on startup, `detect_gaps_for_ha` generates 12 midnight seed rows (cum=0 for 11 days + today) and gap-filling fills them from HA history. Older seed-csv endpoint (`/endpoint/api/seed-csv`) was removed in v2.33 — it was hazardous as it overwrote the file with 12 bootstrap rows, destroying historical data.
-- Billing cycle: configurable via `billing_day` column in retailer_config.csv (default 4, 4th→3rd)
-- Deploy via `bash deploy.sh` — uses `PUT /flow/tab_energy_retailer_comparison` (does not touch other tabs)
-- Node-RED v5.0.0, HA v2026.6.1, apexcharts-card v1.4.0 (no `entity: url` support — uses `data_generator`)
-- Dashboard in YAML mode (file-based)
-- Retailer config editor at `http://192.168.50.100:1880/endpoint/api/retailer-config` — stores to `/share/retailer_config.csv`
-- **JSON escaping rule**: Never use `'\n'` inside function node code for split/join/replace — JSON interprets `\n` as a literal newline, breaking JS string literals across lines. Always use `String.fromCharCode(10)` instead (e.g. `split(String.fromCharCode(10))`). This applies to ALL new or amended function node code. Existing nodes using `\\n` (double-escaped) in the JSON file are fine, but `String.fromCharCode(10)` is the preferred pattern as it is immune to JSON re-encoding corruption.
+## Architecture
+```
+HA SMB share (192.168.50.100:/share)
+  └─ file_notifications/5minelecNEW.csv  ← HA data logger writes here
+       │
+       ├── n8n LXC (192.168.50.161:8080)
+       │    └─ Python server reads via SMB mount at /mnt/ha_share/file_notifications/
+       │         ├── GET /              → Dashboard (Reports/Charts/Config tabs)
+       │         ├── GET /daily-report  → Daily cost table
+       │         ├── GET /monthly-report→ Monthly rollup with TOTAL row
+       │         ├── GET /seasonal-report→ Seasonal rollup with TOTAL row
+       │         ├── GET /5min-detail   → 5-min interval detail
+       │         ├── GET /api/status    → CSV rows/retailers/dates/PEA
+       │         ├── GET /api/daily-data → JSON daily summaries
+       │         ├── GET /api/retailers  → JSON retailer configs
+       │         ├── GET /api/chart-data → Chart.js line chart data
+       │         └── GET/POST /api/retailer-config → Config editor
+       │
+       └── Node-RED (192.168.50.100:1880)
+            └── CSV gap-filling only (detect_gaps → prepare_ha_queries → process_ha_and_fill)
+```
 
-## Progress
+## Pricing Models
+1. **hybrid** (FlowPower): All rates same = flat rate. Export within sp_fit window tiers sp_fit/sp_fit2. PEA applied monthly.
+2. **fixed_tou** (Origin, ZEROHERO, Globird, Flow Four4Free, AGL): TOU periods with off_limit free cap. Default rate `sh_pk` (shoulder).
 
-### Done
-- **`5minelec.csv` eliminated**: Removed `read_original_for_copy` and `compare_csv_read_orig` nodes — flow never reads/writes `5minelec.csv`. Copy mechanism replaced with `build_csv_from_ha` → `http_get_ha_states` → `parse_csv_from_ha` chain that queries HA `/api/states` and writes directly to `5minelecNEW.csv`.
-- **Midnight seed row**: Copy now includes a midnight row (cum=0) so gap-filling detects a gap from 00:00 to current time, covering the full day.
-- **HA history `Z` suffix fix**: HA's `/api/history/period/` requires `Z` suffix (not `+00:00`). The flow's `.toISOString()` already produces `Z` but Python testing revealed the root cause of empty history results was the `+00:00` format.
-- **HA history gap-filling now functional**: CSV seeded with midnight+current row → gap-filling fills 159 rows from HA history with correct cumulative values from all 7 period sensors.
-- **Export fix (v2.29)**: Added 3 new HTTP nodes for export_shoulder/peak/superpeak sensors. `process_ha_and_fill` now sums all 4 export period sensors for total export.
-- **10-day query clip**: HA history queries limited to last 10 days where short-term recorder has reliable 5-min data.
-- **NR v5 auth fix**: All builder functions set `msg.headers: { 'Authorization': authHeader }` instead of relying on node-set headers.
-- **5-min detail sensor 404 fixed**: Uncommented `flow.set('fiveMinDetail', ...)` in `calculate_costs` and added `msg.headers` to `build_five_min_detail`.
-- **Copy chain removed**: `build_csv_from_ha`, `http_get_ha_states`, `parse_csv_from_ha`, `write_new_csv`, `copy_done_resp`, `inject_copy_csv`, `http_copy_csv_endpoint` nodes removed. Bootstrap moved into `detect_gaps_for_ha` — generates midnight seed rows if CSV is empty.
-- **11-day query clip**: Increased from 10 to 11 days to match full HA short-term recorder window.
-- **`msg.payload` bootstrap fix**: `detect_gaps_for_ha` now sets `msg.payload = csvData` after generating midnight seeds, so `calculate_costs` receives the seeded CSV data instead of the original empty payload.
-- **Seed CSV HTTP endpoint**: Added `/endpoint/api/seed-csv` (HTTP GET) for emergency CSV rebuild — generates 12 bootstrap midnight rows and writes directly to `5minelecNEW.csv` via dedicated `write_seed_csv` file-out node.
-- **Broker chain fixed (post-gap-fill)**: Removed erroneous `msg.payload = csvContent` in `process_ha_and_fill` that caused `ReferenceError: csvContent is not defined`, halting the gap-fill `node.send()` and preventing `calculate_costs` from receiving filled data.
-- **Full gap-fill recovery demonstrated**: 0→3068 rows (11 days of 5-min data) from all 7 HA history sensors, costs calculated for all 4 retailers, 6 HA sensor entities populated.
-- **Seed CSV endpoint removed (v2.33)**: `/endpoint/api/seed-csv` deleted — it overwrote the CSV with 12 bootstrap rows, destroying historical data. Replaced by `/endpoint/api/import-seed` which reads `newseed.csv` and merges with current data.
-- **Import seed endpoint added (v2.33)**: `GET /endpoint/api/import-seed` — reads `/share/file_notifications/newseed.csv`, merges rows with current `5minelecNEW.csv` (keeping current rows for overlapping timestamps), writes back. Successfully recovered 198 days (Dec 19 → Jul 4) with 57,578 gap-filled rows from 54,445 seed + 3,133 current rows.
-- **6 new nodes**: `import_seed_http_in`, `import_read_seed_csv`, `import_seed_store`, `import_read_current_csv`, `import_seed_merge` (chains: HTTP→file-in→store→file-in→merge→write+HTPP-resp), `import_seed_http_resp`.
-- **4 nodes removed (seed-csv)**: `http_seed_csv_endpoint`, `seed_csv_func`, `write_seed_csv`, `http_seed_csv_resp`.
-- **FlowPower PEA fix (v2.34)**: `flowRate` was a global const using `billingPea[getBillingKey(today)]` only — all historical dates used today's PEA. Changed to a `getFlowRate(dateStr)` function that computes the rate per-day: `flowPowerRate + (billingPea[getBillingKey(dateStr)] || pea || 0)`. Applied to all 6 hybrid usages: per-interval import, daily summary import/net, 5-min detail impRate and TOTAL impCost. June Import $ dropped from $9.89→$8.14 (PEA −0.074) while July correctly stayed at 0.3230.
-- **Timestamp convention (period-ending)**: All CSV timestamps use `HH:MM:59` format representing the end of the 5-min billing period. Code that reads timestamps should not assume `:00` second format — treat the timestamp as period-ending, not period-starting.
-- **Detail sensor gap-fill (v2.41)**: `process_ha_and_fill` and `prepare_ha_queries` expanded from 7 to 14 sensors. Gap-fill now populates all CSV columns from HA history: bat_charge, bat_discharge, house_load, gen_price, fit_price, aemo_price, solar_gen. `prepare_ha_queries` outputs increased from 7 to 14; 7 new HTTP request nodes added (`ha_http_bat_charge` through `ha_http_solar_gen`). `makeHaRow` returns complete row objects including all 14 fields. Row construction in `process_ha_and_fill` uses detail fields instead of hardcoded `0`. Error handling added so HTTP failures don't hang `process_ha_and_fill` indefinitely.
-- **Bootstrap safety fix**: `detect_gaps_for_ha` bootstrap (which regenerates CSV with 12 midnight seed rows) now checks if the file actually exists via `fs.existsSync()` before running. If the file exists but read returned empty/error, the function returns `null` (skips the cycle) instead of overwriting historical data. This prevents catastrophic data loss when the CSV read fails transiently (e.g., race condition with concurrent write).
-- **Gap-fill timestamp fix (v2.35)**: `parseLocal` in both `detect_gaps_for_ha` and `process_ha_and_fill` previously used `timePart.substring(0,5) + ':00'`, truncating seconds. This caused `fromTs` to be 59 seconds early, making generated timestamps 1 min off (e.g., `23:58:59` instead of `23:59:59`). Fixed by using the full `HH:MM:SS` string. Also fixed `timeStr` to output `HH:MM:SS` and removed the hacky `-1000ms` offset — gap-fill now generates correct `:59` timestamps directly from `rowTs`.
-- **Trailing gap `toNow` fix (v2.35)**: `toNow` was rounded to the START of the current 5-min slot (`:00`), missing 4:59 of fillable data per cycle. Changed to `floor(...) * 5min + 5min - 1s` so `toNow` is the end of the last complete slot (`:59`), matching the CSV timestamp convention.
-- **14-day gap age filter (v2.36)**: `detect_gaps_for_ha` now filters out gaps older than 14 days before triggering HA queries — prevents processing massive un-fillable gaps (e.g., the 186-day seed data gap). Filter applied BEFORE `flow.set('haGapInfo', ...)` so debug endpoint shows only filtered gaps.
-- **Full-range HA queries (v2.36)**: `prepare_ha_queries` no longer clips to 11 days — queries the full gap range. HA returns whatever data is available (short-term or long-term). Tracks earliest gap timestamp via `haLongTermStart` flow variable.
-- **Gap-fill logging (v2.36)**: `process_ha_and_fill` now appends gap-fill activity to `/share/file_notifications/elecdatalog.txt` via `fs.appendFileSync` after each cycle. Logs: timestamp, data source, gap timestamps (from/to), gap_min, trailing/cross_day flags, row counts. Readable via `GET /endpoint/api/log`.
-- **Log HTTP endpoint (v2.36)**: Added `GET /endpoint/api/log` — reads `/share/file_notifications/elecdatalog.txt` and returns JSON with `content` and `lines` fields. 4 new nodes: `logger_http_in`, `logger_read_file`, `logger_func`, `logger_http_resp`.
-- **Calculate costs race fix (v2.37)**: `detect_gaps_for_ha` previously sent original csvData to `calculate_costs` (wire[0]) while also triggering the gap-fill chain (wire[1]). `calculate_costs` would write the ORIGINAL (pre-fill) data to the file via output 3 → `write_fixed_csv` BEFORE `process_ha_and_fill` could merge the HA-filled rows. If the gap-fill chained failed or took too long, the file was overwritten with un-filled data, causing rows to be lost. Fixed by changing `return [msg, msg]` to `return [null, msg, msg]` — when gaps exist, wire[0] is `null` so `calculate_costs` is not triggered until `process_ha_and_fill` completes and sends the merged data. When no gaps exist, `return [msg, null]` continues to work as before.
-- **NR v5 msg property override warnings fixed (v2.37)**: 9 HTTP request nodes had hardcoded `Authorization: Bearer <token>` in their node `headers` config, but all upstream builder functions also set `msg.headers` dynamically via `global.get('ha_token')`. In NR v5, configured properties win — `msg.headers` was silently discarded and a warning fired each cycle. Fixed by clearing `headers: []` on all 9 nodes (the builders already provide the correct headers via msg).
-- **Initial clean reseed (v2.38)**: Flow reverted to commit 22a60c1. CSV cleared and reseeded from newseed.csv (56,834 rows, 19 Dec 2025 onward, HA-sourced cumulative data). Temp files cleaned. Blank line filter added to both `process_ha_and_fill` and `calculate_costs` csvLines splits.
-- **Retailer editor enhanced (v2.38)**: Added blank editable row at bottom for adding new retailers. Globird Four4Free added as 7th retailer (fixed_tou, $1.30174 DSC, $0.58152 pk 16-23, $0.36385 sh, first 50kWh off-peak free, $0.08 FIT 16-23).
-- **`prevOff` day-boundary reset fixed (v2.38)**: `csvByDate` building loop in `calculate_costs` incorrectly reset `prevExport/prevOff/prevSh/prevPk` to 0 at each day change, causing the first 5-min interval of each day to report the entire cumulative value as a single interval's import. Removed the reset — prev values now carry across day boundaries (matching the dailySummary loop which correctly kept prev values). Also removed a dead duplicate `if (rowDateStr !== prevDay)` block.
-- **`deploy.sh` updated (v2.38)**: Changed `rowCount=6` to `rowCount=7`. Added Globird Four4Free seed data at row 7. Redeploys now preserve all 7 retailers.
-- **`glo_rebate` config column added (v2.39)**: New column `glo_rebate` in retailer_config.csv controls the $1 evening rebate (applied if evening import < 0.09 kWh). Globird VPP gets `glo_rebate=1`; all other retailers (including Globird Four4Free) get `0`. The code now checks `r.glo_rebate > 0` instead of `r.name.indexOf('Globird')`. Updated all config headers: `retailer_config_template`, `save_config_handler_1`, `serve_config_page_74a84a79`, and `deploy.sh`.
-- **Synthetic row cumSolar/cumLoad fix (v2.43)**: Gap-fill and plateau redistribution synthetic rows now linearly interpolate `cumLoad` and `cumSolar` from surrounding rows, fixing NaN solar→0.0 in daily report.
-- **Solar column in daily report (v2.43)**: Added `<th>Sol</th>` and `<td>` for `(d.totalSolar||0).toFixed(1)` — was missing from git HEAD version.
-- **Total row alignment fix (v2.43)**: Added empty `<td>` for Sol column in total row (6 stat columns → 5 empty tds, not 4).
-- **HTTP Response node for daily-report (v2.43)**: `daily_report_resp_x836h32a` — NR v5 needs explicit response node.
-- **Try/catch + empty check restored in handler (v2.43)**: `Object.keys(null)` crash fixed in `daily_report_handler_f`.
-- **`flow.set('dailySummary')` moved before early returns (v2.43)**: Gap/plateau paths no longer skip storing dailySummary, fixing stale data in report.
-- **Minimum row guard (v2.44)**: `detect_gaps_for_ha` requires ≥50 data rows to prevent processing a truncated CSV (e.g., overwritten by HA data logger notification header). Returns `null` instead of gap-filling and destroying historical data.
-- **FlowPower full-export compromise (v2.46)**: Keeps FlowPower's lucrative 45c (`sp_fit`) export credit on the **full configured export** (`fixed_export`, e.g. 18 kWh/day) regardless of actual surplus, but bumps import by the shortfall vs actual FIT-window export: `adjExport = fixed_export; adjImport = totalImport + max(0, fixed_export - (totalExport+expOutside45c))`. Rationale: import rate < 45c, so importing to fill the guaranteed export is still net-positive. Applied in both daily-summary and 5-min-detail blocks. (Supersedes the v2.45 cap-by-actual model.)
-- **Rename battery columns (v2.46)**: Renamed `bat_charge2` and `bat_discharge` CSV columns to `Bat_Charge_Energy` and `Bat_Discharge_Energy` to match new Modbus sensors (`sensor.foxmodbus_battery_charge_today` / `discharge_today`). Updated all CSV headers and HA sensor polling logic.
-- **FlowPower equilibrium removed (v2.45)**: `calculate_costs` no longer assumes battery discharge = `(load+export)-(solar+import)` and adds it back to FlowPower import. Battery charge/discharge columns are `unavailable` in practice, so the model was unsound and made FlowPower non-comparable.
-- **daily-report returns raw HTML (v2.44)**: Changed `Content-Type` to `text/html` and returns HTML directly (not JSON-wrapped). Iframe in HA dashboard now renders tables instead of showing raw JSON text.
-- **`patch_live_solar.py` accepts CLI arg (v2.44)**: Fixed hardcoded `LIVE_PATH` to use `sys.argv[1]`, outputs to `{input}.patched`. Previously ignored its argument.
-- **CSV recovered from backup (v2.44)**: `5minelecNEW.csv` destroyed by HA data logger (159k→3 rows). Restored from backup (102k rows, Dec 19–Jul 7), solar re-patched for 42 days.
-- **5-min resampling energy bug fixed**: `.resample('5min').mean() * 5/60` overcounted by 66.7% when only 1 of 2 possible 3-min FoxESS readings fell in a 5-min window (the single mean value was multiplied by the full 5-min interval, recovering "missing" energy from the absent 2nd reading). Fixed in `foxess_to_5minelec.py` by computing raw 3-min energy (`* 3/60`), summing per 5-min window, then converting back to effective mean power. July solar dropped from 31–56 → 17–33 kWh/day. Every daily CSV total now matches raw 3-min data exactly.
-- **Gap-fill TOU columns zeroed (user requirement)**: `process_ha_and_fill` gap-fill row construction changed from `haRow.off.toFixed(3)`/`haRow.sh.toFixed(3)`/`haRow.pk.toFixed(3)` to hardcoded `'0.000,'` for offpeak/shoulder/peak. Only `Import_kWh` (col 14 = `haRow.off + haRow.sh + haRow.pk`) carries import. `calculate_costs` already reads import from `row[14]` with fallback to TOU sum.
-- **Gap-fill corruption fixed (backwards cumulatives)**: HA history sensors (`sensor.foxsys_total_solar_generation`, export meters) return STALE values mid-day (sensor stops updating), so gap-fill wrote decreasing cumulative values (solar 17.378→6.6, export 0.249→0.148) — impossible for cumulative meters. Fix in `process_ha_and_fill`: each gap-fill row's cumulative (Import, Export, bat_charge, bat_discharge, house_load, solar_gen) is clamped via `Math.max(haValue, anchor)` where `anchor` = last CSV row's cumulative at the gap start (`gap.fromDate + ' ' + gap.from + ':59'`, matched by **string comparison** on `pe_datetime` col 12 — timezone-independent, avoids the `gap.fromTs` vs `parseLocal` 10-hour UTC offset mismatch). Anchor updates per-iteration so cumulatives never decrease. Existing corrupt rows fixed retroactively by clamping all cumulative columns (export/bat_charge/Bat_Charge_Energy/bat_discharge/house_load/solar_gen/Import_kWh) to be monotonically non-decreasing per day.
+## Deployment
+### Python Server (192.168.50.161:8080)
+- Runs as `energy-server.service` on container 104 (n8n LXC)
+- ExecStart: `/opt/energy_server.sh` → `python3 /opt/energy_server.py --csv /mnt/ha_share/... --config /opt/energy_data/retailer_config.csv --port 8080`
+- Deploy: `bash deploy.sh` — seeds config via `POST /api/retailer-config/save`
 
-### In Progress
-- (none)
+### SMB Mount (Proxmox host → container 104)
+- Host mounts `//192.168.50.100/share` at `/mnt/ha_share` (CIFS, user Stilgar)
+- Container bind-mounts host's `/mnt/ha_share` at `/mnt/ha_share` via `mp0` in `/etc/pve/lxc/104.conf`
 
-### Blocked
-- (none)
+### HA Dashboard
+- Separate dashboard `energy-retailer-dashboard` with views `testing` and `energy-retailer-charts`
+- Deploy via WebSocket API using `deploy_config_view.py` (see DEPLOY.md)
 
-## Key Decisions
-- Sticky headers: removed nested overflow containers, single scrollable report div with `position:sticky;top:0` on header
-- Stale sensor cleanup: cached previous sensor IDs in flow variable, DELETE via second function output + separate HTTP DELETE node
-- FlowPower 5-min detail: tracks cumulative import/export kWh and outside-window export per day, applies hybrid adjImport/adjExport at TOTAL row
-- TOTAL row uses raw unrounded accumulators (not rounded interval sums) for accurate totals matching daily detail
-- Deploy strategy: `PUT /flow/:id` via `deploy.sh` — safer, faster, single-tab only
-- Versioning: plain `VERSION` file read by deploy script, injected as `v{version}` into group name and sensor attributes
-- Charts use `data_generator` (not `entity: url`) for apexcharts-card v1.4.0 — data sourced from HA sensor JSON attributes
-- Dashboard YAML split: `dashboard.yaml` = "Energy Retailer Costs" view; `dashboard-charts.yaml` = "Energy Retailer Charts" view
-- Config extended with `ev_s`, `ev_e`, `ev_pk`, `off_limit` columns — 4th TOU period (EV Off-Peak) and free import daily cap, only populated for CovaU
-- Free import 24kWh/day cap tracked per day per retailer as `freeUsage`, reset daily; excess charged at shoulder rate
-- Per-period FIT windows allow different FIT windows from TOU windows for each period
-- Retailer config stored in `/share/retailer_config.csv`; flow reads on each 5-min cycle; template node as fallback
-- **HA history gap filling**: queries `sensor.energy_import_meter_offpeak/shoulder/peak` and `sensor.energy_export_meter_offpeak/shoulder/peak/superpeak` across gap boundaries; uses real cumulative values as interpolation anchors; falls back to linear interpolation when HA data unavailable; `process_ha_and_fill` collects 7 HTTP responses via flow variables before processing
-- **Export sums all 4 period sensors**: `totalExp = vExpOff + vExpSh + vExpPk + vExpSp` in `makeHaRow` — single export cumulative sensor doesn't exist in HA; must reconstruct from 4 period sensors
-
-## Next Steps
-- Verify 5-min cycles continue running cleanly with 57k+ row CSV
-- Verify `elecdatalog.txt` appears after first gap-fill cycle
-
-## Key Decisions (cont.)
-- **Seed CSV endpoint removed**: `/endpoint/api/seed-csv` was dangerous — it overwrote `5minelecNEW.csv` with 12 bootstrap rows, destroying any historical data. Replaced by `/endpoint/api/import-seed` which reads `newseed.csv` (external historical snapshot) and merges it with current data without data loss.
-- **Import endpoint chain**: HTTP→file-in (newseed.csv)→store→file-in (5minelecNEW.csv)→merge→write+response. Uses `write_fixed_csv` (existing) for the final write.
-- **Merge strategy**: current CSV rows take priority for overlapping timestamps; seed rows fill in missing older dates only.
+## Key Files
+| File | Purpose |
+|---|---|
+| `energy_server.py` | Python web server — all cost calc + reporting |
+| `node_red_flow.json` | Node-RED flow — CSV gap-filling only |
+| `deploy.sh` | Seeds Python server config |
+| `dashboard.yaml` | HA view — "Energy Retailer Costs" |
+| `dashboard-charts.yaml` | HA view — "Energy Retailer Charts" |
+| `dashboard-config.yaml` | HA view — Config editor iframe |
+| `newseed.csv` | **Critical backup** — never delete |
+| `retailer_config.csv` | Local reference copy of retailer config |
 
 ## Critical Context
-- Node-RED httpNodeRoot = `/endpoint` — all HTTP input nodes accessed via `/endpoint/` prefix
-- Flow variable `fiveMinDetail` stored by `calculate_costs`, read by both HTTP handlers
-- `expOutside45c` tracked as positive in 5-min detail, then subtracted for adjImport/adjExport
-- Node-RED admin API accessible at port 1880 with nginx basic auth (`stilgar` / `Ha0118021669`) — no Bearer token needed for admin API
-- Token: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyZGVkZTMwMWI1Mzc0NmJhOTNhOTM2YzM4N2FmOGU0ZSIsImlhdCI6MTc4MjA4NTA5OSwiZXhwIjoyMDk3NDQ1MDk5fQ.ovX2gmYaIlLbxTcw54DngXne9K8HbDFgl_Sb3afjIcU` (HA long-lived access token)
-- Dashboard path `testing` for Energy Retailer Costs; `energy-retailer-charts` for Energy Retailer Charts; `energy-retailer-config` for Energy Retailer Configuration
-- **Energy Retailer Dashboard**: separate dashboard at `energy-retailer-dashboard` with 3 views
-- AEMO price available as `row[11]` in CSV parsing loops; network cost from `getNetworkCost(dt)` function
-- `daily_data` format: `[{"date":"2026-06-01","FlowPower":1.23,"FlowPower_cum":1.23,"import_kwh":8.5,"export_kwh":3.2,"cheapest":"FlowPower",...}]`
-- `chart_data` format: `{"FlowPower_2026-06-12":[{"t":"00:00","ik":0.123,"ap":45.23,"nw":0.0515},...],...}`
-- apexcharts-card v1.4.0 — no `entity: url`; all series use `data_generator` reading from entity attributes
-- CSV header: 32 columns: `name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day`
+- **CSV source**: `5minelecNEW.csv` lives on HA SMB share only. No local copy in repo.
+- **Node-RED** only handles CSV gap-filling. No cost calculation or HTTP reporting endpoints.
+- **Config editor**: `http://192.168.50.161:8080/api/retailer-config`
+- **SMB Credentials**: user `Stilgar` / `Ha0118021669`
+- **Proxmox host**: 192.168.50.49 (root / `Ha0118021669`), n8n container 104
+- **HA**: 192.168.50.100:8123, Node-RED admin on port 1880 (basic auth `stilgar`/`Ha0118021669`)
+- **PEA**: Peak Export Adjustment = LWAP − TWAP − pea_base. Applied to FlowPower monthly.
+- **CSV columns (14)**: datetime,offpeak,shoulder,peak,export,bat_charge,bat_charge2,bat_discharge,house_load,gen_price,fit_price,aemo_price,pe_datetime,solar_gen
+- **Config columns (37)**: name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_fit2,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,pea_base,pea_override,glo_rebate,energymadeeasy_planid
 
-## Relevant Files
-- `node_red_flow.json`: Complete flow — 72 nodes + group + config editor endpoints + import seed endpoint
-- `dashboard.yaml`: HA dashboard YAML — "Energy Retailer Costs" view (path: `testing`)
-- `dashboard-charts.yaml`: HA dashboard YAML — "Energy Retailer Charts" view (path: `energy-retailer-charts`)
-- `deploy.sh`: Deploy script — `PUT /flow/tab_energy_retailer_comparison` with basic auth, version injection, config seed
-- `VERSION`: Current version (v2.46)
-- `AGENTS.md`: This file — session continuity for opencode agents
-- `DEPLOY.md`: Full instructions for updating HA Dashboards and Node-RED without affecting other tabs
+## Retailers
+| # | Name | Model | DSC | Notes |
+|---|---|---|---|---|
+| 1 | FlowPower | hybrid | $2.4047 | sp_fit=35c, sp_fit2=10c, sp_limit=15, PEA applied |
+| 2 | Origin Battery Starter | fixed_tou | $1.2567 | pk=57.31c 5-9pm, off=33c, pk_fit=18c |
+| 3 | Origin Battery Maximiser | fixed_tou | $1.2567 | pk=53.9c 5-9pm, off=18.7c, pk_fit=22c |
+| 4 | ZEROHERO - VPP | fixed_tou | $1.584 | sh=40.7c, pk=52.8c, sp_fit=10c, glo_rebate=1 |
+| 5 | Globird Four4Free | fixed_tou | $1.70 | pk=46c 4-11pm, sh=23c, off_limit=50, pk_fit=8c |
+| 6 | Flow Four4Free | fixed_tou | $2.4047 | sp_fit=20c, sp_fit2=5c, off_limit=32 |
+| 7 | AGL Battery Rewards | fixed_tou | $1.58631 | pk=54.175c 3-9pm, off=21.626c 9pm-3pm, pk_fit=28c 5-9pm, sp_fit=3c 7-8am |
 
-## Updating Without Breaking Other Tabs
-See `DEPLOY.md` for the complete guide. In summary:
-- **HA Dashboard**: Fetch full config via WebSocket `lovelace/config` (with `url_path: 'energy-retailer-dashboard'`), replace only views matching paths `testing` and `energy-retailer-charts`, save via WebSocket `lovelace/config/save`. Never use REST endpoints — they replace the entire config. The dashboard is served at `/energy-retailer-dashboard/testing`.
-- **Node-RED**: Run `bash deploy.sh` — it extracts only `tab_energy_retailer_comparison` from `node_red_flow.json` and sends `PUT /flow/:tab_id` to the Node-RED admin API, leaving all other tabs untouched.
-
-## Retailer Config Editor
-A web-based editor for retailer rates and TOU periods is available at `http://192.168.50.100:1880/endpoint/api/retailer-editor`. Changes are saved to `/share/retailer_config.csv` on HA and take effect on the next 5-min cycle. The editor is preferred over editing the template node directly — `deploy.sh` auto-seeds the file on first deploy.
-
-## CSV Column Layout (5minelecNEW.csv)
-14 columns, written by HA template (data logger) and read by `calculate_costs` by index:
-`datetime,offpeak,shoulder,peak,export,bat_charge,bat_charge2,bat_discharge,house_load,gen_price,fit_price,aemo_price,pe_datetime,solar_gen`
-- Col 0: timestamp (`:30` from logger, `:59` from flow gap-fill)
-- Col 1-3: cumulative import kWh per TOU period
-- Col 4: grid daily export energy (resets daily)
-- Col 5: foxess_bat_charge (battery charging)
-- Col 6: foxess_bat_charge duplicate (same sensor)
-- Col 7: foxess_bat_discharge (battery discharging)
-- Col 8: foxmodbus_load_energy_today (cumulative house load)
-- Col 9: home_general_price.spot_per_kwh (general import spot price)
-- Col 10: home_feed_in_price.spot_per_kwh (feed-in tariff spot price)
-- Col 11: aemo_nemweb_nsw1_realtime_price (AEMO wholesale)
-- Col 12: period-ending timestamp (`:59`)
-- Col 13: foxsys_total_solar_generation (solar generation)  
-Code reads `row[1-4]` and `row[8]` as cumulative values, `row[11]` as AEMO price.
+## Version
+Current: v3.00
