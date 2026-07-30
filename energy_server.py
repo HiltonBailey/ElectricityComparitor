@@ -344,37 +344,39 @@ def calculate_costs(intervals, retailers):
                         ir = r.get('ev_pk', 0); tou = 'EV '
                     elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
                         ir = r.get('pk_pk', 0); tou = 'Pk '
-                    er = r.get('sh_fit', 0)
+                    er = r.get('sh_fit', 0); fit = 'Sho'
                     if in_window(h, r.get('sp_s', 0), r.get('sp_e', 0)) and r.get('sp_limit', 0) > 0:
                         rem = r['sp_limit'] - spu
                         if rem > 0:
                             sp = min(e_kwh, rem); fb = e_kwh - sp; spu += sp
-                            er = r.get('sp_fit', 0)
+                            er = r.get('sp_fit', 0); fit = 'Sp '
                             if fb > 0:
                                 fr = r.get('sh_fit', 0)
                                 if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): fr = r.get('pk_fit', 0)
                                 er = (sp * r.get('sp_fit', 0) + fb * fr) / e_kwh if e_kwh > 0 else 0
+                                fit = 'Sp+'
                         else:
-                            er = r.get('sh_fit', 0)
-                            if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0)
+                            er = r.get('sh_fit', 0); fit = 'Sho'
+                            if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
                     else:
-                        if in_window(h, r.get('sp_s', 0), r.get('sp_e', 0)): er = r.get('sp_fit', 0)
-                        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0)
-                        elif in_window(h, r.get('off_s', 0), r.get('off_e', 0)): er = r.get('off_fit', 0)
+                        if in_window(h, r.get('sp_s', 0), r.get('sp_e', 0)): er = r.get('sp_fit', 0); fit = 'Sp '
+                        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
+                        elif in_window(h, r.get('off_s', 0), r.get('off_e', 0)): er = r.get('off_fit', 0); fit = 'Off'
                     ic = i_kwh * ir; ec = e_kwh * er
                 else:
                     tou = 'Flat'; ir = r.get('sh_pk', 0.2) + pea
-                    er = r.get('off_fit', 0)
+                    er = r.get('off_fit', 0); fit = 'Off'
                     if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)):
                         rem2 = r.get('sp_limit', 0) - spu
                         if rem2 > 0:
                             sp2 = min(e_kwh, rem2); fb2 = e_kwh - sp2; spu += sp2
                             er = (sp2 * r.get('sp_fit', 0) + fb2 * r.get('sp_fit2', 0)) / e_kwh if e_kwh > 0 else 0
+                            fit = 'Sp '
                         else:
-                            er = r.get('sp_fit2', 0)
+                            er = r.get('sp_fit2', 0); fit = 'Sp2'
                     ic = i_kwh * ir; ec = e_kwh * er
                 tic += ic; tec += ec
-                outs.append({'time': iv['time'][:5], 'tou': tou, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
+                outs.append({'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
                              'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)})
             reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.03 and hr19 < 0.03 and hr20 < 0.03) else 0.0
             nt = round(tic - tec + r.get('dsc', 0) - reb, 2)
@@ -552,6 +554,7 @@ def fivemin_html(fm, ds, rname, date_str):
          f'Net ${net:.2f}</span></div>')
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
     t += '<th style="padding:4px 6px;text-align:left">Time</th><th style="padding:4px 6px;text-align:left">TOU</th>'
+    t += '<th style="padding:4px 6px;text-align:left">FIT</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
@@ -561,6 +564,7 @@ def fivemin_html(fm, ds, rname, date_str):
         nt = iv.get('ic', 0) - iv.get('ec', 0)
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{iv["time"]}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{iv.get("tou","")}</td>'
+              f'<td style="padding:2px 6px;color:#fc8">{iv.get("fit","")}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#8cf">{iv["ik"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#fc8">{iv["ek"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#888">{iv["ir"]:.4f}</td>'
@@ -597,12 +601,14 @@ def hourly_html(fm, ds, rname, date_str):
     for iv in ivs:
         if iv.get('time') == 'TOTAL': continue
         h = iv['time'][:2]
-        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', '')})
+        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', ''), 'fit_counts': {}})
         hours[h]['ik'] += iv['ik']
         hours[h]['ek'] += iv['ek']
         hours[h]['ic'] += iv['ic']
         hours[h]['ec'] += iv['ec']
         hours[h]['count'] += 1
+        ft = iv.get('fit', '')
+        hours[h]['fit_counts'][ft] = hours[h]['fit_counts'].get(ft, 0) + 1
 
     hdr = (f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#151515;color:#aaa;font-size:14px;font-weight:bold;border-bottom:1px solid #222">'
            f'<span>{date_str} — {rname}</span>'
@@ -612,6 +618,7 @@ def hourly_html(fm, ds, rname, date_str):
            f'Net ${net:.2f}</span></div>')
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
     t += '<th style="padding:4px 6px;text-align:left">Hour</th><th style="padding:4px 6px;text-align:left">TOU</th>'
+    t += '<th style="padding:4px 6px;text-align:left">FIT</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Avg Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Avg Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
@@ -622,8 +629,10 @@ def hourly_html(fm, ds, rname, date_str):
         avg_ir = hv['ic'] / hv['ik'] if hv['ik'] > 0 else 0
         avg_er = hv['ec'] / hv['ek'] if hv['ek'] > 0 else 0
         label = f'{h}:00-{int(h)+1}:00'
+        dom_fit = max(hv['fit_counts'], key=hv['fit_counts'].get) if hv['fit_counts'] else ''
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{label}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{hv["tou"]}</td>'
+              f'<td style="padding:2px 6px;color:#fc8">{dom_fit}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#8cf">{hv["ik"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#fc8">{hv["ek"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_ir:.4f}</td>'
