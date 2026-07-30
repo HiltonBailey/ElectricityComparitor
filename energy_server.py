@@ -14,6 +14,7 @@ Endpoints:
     /api/status            JSON server status
     /daily-report          HTML daily comparison table
     /5min-detail           HTML per-retailer 5-min breakdown
+    /hourly-detail         HTML per-retailer hourly breakdown
     /api/daily-data        JSON daily summary
     /api/retailers         JSON retailer configs
     /api/chart-data        JSON chart series
@@ -570,6 +571,70 @@ def fivemin_html(fm, ds, rname, date_str):
     t += '</tbody></table></div>'
     return h + t
 
+# ─── Hourly Report ─────────────────────────────────────────────────────────────
+
+def hourly_html(fm, ds, rname, date_str):
+    d = fm.get(rname, {}).get(date_str)
+    if not d: return '<div style="color:#888;padding:20px">No data</div>'
+    ivs = d['intervals']
+    dr = ds.get(date_str, {}).get('retailers', {}).get(rname, {})
+    tot = ivs[-1] if ivs else {}
+    if dr:
+        ik = ds[date_str].get('totalImport', tot.get('ik', 0))
+        ek = ds[date_str].get('totalExport', tot.get('ek', 0))
+        ic = dr.get('import', tot.get('ic', 0))
+        ec = dr.get('export', tot.get('ec', 0))
+        dsc = dr.get('dsc', tot.get('dsc', 0))
+        reb = dr.get('gloRebate', tot.get('rebate', 0))
+        net = dr.get('net', tot.get('net', 0))
+    else:
+        ik = tot.get('ik', 0); ek = tot.get('ek', 0)
+        ic = tot.get('ic', 0); ec = tot.get('ec', 0)
+        dsc = tot.get('dsc', 0); reb = tot.get('rebate', 0)
+        net = tot.get('net', 0)
+
+    hours = {}
+    for iv in ivs:
+        if iv.get('time') == 'TOTAL': continue
+        h = iv['time'][:2]
+        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', '')})
+        hours[h]['ik'] += iv['ik']
+        hours[h]['ek'] += iv['ek']
+        hours[h]['ic'] += iv['ic']
+        hours[h]['ec'] += iv['ec']
+        hours[h]['count'] += 1
+
+    hdr = (f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#151515;color:#aaa;font-size:14px;font-weight:bold;border-bottom:1px solid #222">'
+           f'<span>{date_str} — {rname}</span>'
+           f'<span style="white-space:nowrap">{ik:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; Exp {ek:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; '
+           f'Import ${ic:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Export ${ec:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
+           f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
+           f'Net ${net:.2f}</span></div>')
+    t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
+    t += '<th style="padding:4px 6px;text-align:left">Hour</th><th style="padding:4px 6px;text-align:left">TOU</th>'
+    t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
+    t += '<th style="padding:4px 6px;text-align:right">Avg Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Avg Exp $/kWh</th>'
+    t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
+    t += '<th style="padding:4px 6px;text-align:right">Net $</th></tr></thead><tbody>'
+    for h in sorted(hours.keys(), key=int):
+        hv = hours[h]
+        inet = hv['ic'] - hv['ec']
+        avg_ir = hv['ic'] / hv['ik'] if hv['ik'] > 0 else 0
+        avg_er = hv['ec'] / hv['ek'] if hv['ek'] > 0 else 0
+        label = f'{h}:00-{int(h)+1}:00'
+        t += (f'<tr><td style="padding:2px 6px;color:#aaa">{label}</td>'
+              f'<td style="padding:2px 6px;color:#ccc">{hv["tou"]}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#8cf">{hv["ik"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#fc8">{hv["ek"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_ir:.4f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_er:.4f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#ff8a65">{hv["ic"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#8fbc8f">{hv["ec"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:{"#ff5252" if inet>=0 else "#4CAF50"}">{inet:.3f}</td></tr>')
+    t += '</tbody></table></div>'
+    return hdr + t
+
+
 # ─── Dashboard (Tabbed UI) ────────────────────────────────────────────────────
 
 _PAGE_PREFIX = '''<!DOCTYPE html>
@@ -605,6 +670,7 @@ _REPORTS_HTML = '''<div class=subtabs>
 <button class=active onclick="switchSub(this,'sub-seasonal')">Seasonal</button>
 <button onclick="switchSub(this,'sub-monthly')">Monthly</button>
 <button onclick="switchSub(this,'sub-daily')">Daily</button>
+<button onclick="switchSub(this,'sub-hourly')">Hourly</button>
 <button onclick="switchSub(this,'sub-5min')">5-Min</button>
 </div>
 <div class=subtab-content id=sub-seasonal style="display:flex">
@@ -630,6 +696,14 @@ _REPORTS_HTML = '''<div class=subtabs>
 </div>
 <div style=flex:1><iframe id=5minFrame style="width:100%;height:100%;border:none;background:#0d0d0d"></iframe></div>
 </div>
+<div class=subtab-content id=sub-hourly>
+<div class=report-controls>
+<label>Retailer <select id=retailerSel2 onchange=loadHourly()></select></label>
+<label>Date <input type=date id=dateSel2 onchange=loadHourly()></label>
+<label style=color:#888 id=hourlyStatus></label>
+</div>
+<div style=flex:1><iframe id=hourlyFrame style="width:100%;height:100%;border:none;background:#0d0d0d"></iframe></div>
+</div>
 <script>
 function switchSub(btn,id){
 document.querySelectorAll('.subtabs button').forEach(function(b){b.classList.remove('active')});
@@ -637,6 +711,7 @@ btn.classList.add('active');
 document.querySelectorAll('.subtab-content').forEach(function(c){c.classList.remove('active');c.style.display='none'});
 document.getElementById(id).style.display='flex';
 if(id==='sub-5min')populate5minSelectors();
+if(id==='sub-hourly')populateHourlySelectors();
 }
 var allRetailers=null,allDates=null;
 function populate5minSelectors(){
@@ -658,6 +733,27 @@ var r=document.getElementById('retailerSel').value,d=document.getElementById('da
 if(!r||!d)return;
 document.getElementById('5minStatus').textContent=r+' — '+d;
 document.getElementById('5minFrame').src='/5min-detail?retailer='+encodeURIComponent(r)+'&date='+encodeURIComponent(d);
+}
+var hourlyRetailers=null,hourlyDates=null;
+function populateHourlySelectors(){
+if(hourlyRetailers)return;
+var rs=document.getElementById('retailerSel2'),ds=document.getElementById('dateSel2');
+fetch('/api/retailers').then(function(r){return r.json()}).then(function(data){
+hourlyRetailers=data;rs.innerHTML='';
+hourlyRetailers.forEach(function(r,i){
+var o=document.createElement('option');o.value=r.name;o.textContent=r.name;rs.appendChild(o)});
+loadHourly()});
+if(!hourlyDates){
+fetch('/api/daily-data').then(function(r){return r.json()}).then(function(data){
+hourlyDates=Object.keys(data).sort().reverse();
+if(hourlyDates.length)ds.value=hourlyDates[0];
+loadHourly()});
+}}
+function loadHourly(){
+var r=document.getElementById('retailerSel2').value,d=document.getElementById('dateSel2').value;
+if(!r||!d)return;
+document.getElementById('hourlyStatus').textContent=r+' — '+d;
+document.getElementById('hourlyFrame').src='/hourly-detail?retailer='+encodeURIComponent(r)+'&date='+encodeURIComponent(d);
 }
 function loadDaily(){
 var f=document.getElementById('fDate').value,t=document.getElementById('tDate').value,d=document.getElementById('daysNum').value,b=document.getElementById('bpSel').value;
@@ -957,6 +1053,10 @@ class Handler(BaseHTTPRequestHandler):
             rn = params.get('retailer', [None])[0]; dt = params.get('date', [None])[0]
             if not rn or not dt: self._html('<div style="color:#888;padding:20px">?retailer=X&date=YYYY-MM-DD</div>'); return
             self._html(fivemin_html(fm, ds, rn, dt))
+        elif path == '/hourly-detail':
+            rn = params.get('retailer', [None])[0]; dt = params.get('date', [None])[0]
+            if not rn or not dt: self._html('<div style="color:#888;padding:20px">?retailer=X&date=YYYY-MM-DD</div>'); return
+            self._html(hourly_html(fm, ds, rn, dt))
         elif path == '/api/daily-data':
             self._json(ds)
         elif path == '/api/retailers':
@@ -971,7 +1071,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._html('<div style="color:red;padding:20px">Error reading config: ' + str(e) + '</div>')
         else:
-            self._json({'error': 'Not found', 'paths': ['/','/api/status','/daily-report','/monthly-report','/seasonal-report','/5min-detail','/api/daily-data','/api/retailers','/api/chart-data','/api/retailer-config','/api/retailer-config/save']}, 404)
+            self._json({'error': 'Not found', 'paths': ['/','/api/status','/daily-report','/monthly-report','/seasonal-report','/5min-detail','/hourly-detail','/api/daily-data','/api/retailers','/api/chart-data','/api/retailer-config','/api/retailer-config/save']}, 404)
     
     def do_POST(self):
         parsed = urlparse(self.path); path = parsed.path
