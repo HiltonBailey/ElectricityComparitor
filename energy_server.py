@@ -172,10 +172,16 @@ def _fixed_tou_interval(d, r, h, ti, ek):
             d['spExportKwh'] += sp
             if fb > 0:
                 er2 = r.get('sp_fit2', 0)
-                d['export'] += fb * er2; d['shExportKwh'] += fb
+                if in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): er2 = r.get('pk_fit', 0)
+                d['export'] += fb * er2
+                if er2 == r.get('pk_fit', 0): d['pkExportKwh'] += fb
+                else: d['shExportKwh'] += fb
         else:
             er2 = r.get('sp_fit2', 0)
-            d['export'] += ek * er2; d['shExportKwh'] += ek
+            if in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): er2 = r.get('pk_fit', 0)
+            d['export'] += ek * er2
+            if er2 == r.get('pk_fit', 0): d['pkExportKwh'] += ek
+            else: d['shExportKwh'] += ek
     else:
         er = r.get('sh_fit', 0)
         if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)): er = r.get('sp_fit', 0)
