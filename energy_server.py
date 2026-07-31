@@ -87,7 +87,8 @@ def load_retailer_config(path):
         'off_fit_s', 'off_fit_e', 'sh_fit_s', 'sh_fit_e',
         'pk_fit_s', 'pk_fit_e', 'sp_fit_s', 'sp_fit_e',
         'fixed_export', 'ev_s', 'ev_e', 'ev_pk', 'off_limit', 'billing_day',
-        'pea_base', 'pea_override'
+        'pea_base', 'pea_override', 'bat_cap', 'bat_chg', 'bat_dis', 'bat_eff',
+        'soc_min', 'soc_max', 'init_soc', 'chg_pct', 'dis_pct'
     ]
     with open(path, newline='') as f:
         reader = csv.DictReader(f)
@@ -119,12 +120,16 @@ def load_csv_rows(path):
                 'Import_kWh': _f(line[14]),
                 'export': _f(line[4]),
                 'aemo_price': _f(line[11]),
+                'load_reg': _f(line[8]),
+                'solar_reg': _f(line[13]),
             })
     return rows
 
 def extract_intervals(rows):
     intervals = []
     prev_imp = prev_exp = 0.0
+    prev_load = prev_solar = 0.0
+    prev_date = None
     for row in rows:
         pe = row['pe']
         ci = row['Import_kWh']; ce = row['export']
@@ -134,15 +139,102 @@ def extract_intervals(rows):
         try:
             dt = datetime.strptime(pe, '%Y-%m-%d %H:%M:%S')
         except: continue
+        date = dt.strftime('%Y-%m-%d')
+        if date != prev_date:
+            prev_load = prev_solar = 0.0
+            prev_date = date
+        cl = row['load_reg']; cs = row['solar_reg']
+        l_kwh = max(0.0, cl - prev_load) if cl >= prev_load else 0.0
+        s_kwh = max(0.0, cs - prev_solar) if cs >= prev_solar else 0.0
+        prev_load = cl; prev_solar = cs
         intervals.append({
-            'pe': pe, 'date': dt.strftime('%Y-%m-%d'), 'time': dt.strftime('%H:%M:%S'),
+            'pe': pe, 'date': date, 'time': dt.strftime('%H:%M:%S'),
             'h': dt.hour + dt.minute / 60.0,
             'i_kwh': i_kwh, 'e_kwh': e_kwh, 'cum_imp': ci, 'cum_exp': ce,
             'aemo': row['aemo_price'],
+            'load_kwh': l_kwh, 'solar_kwh': s_kwh,
         })
     return intervals
 
 # ─── Cost Calculator ─────────────────────────────────────────────────────────
+
+def _pct(sorted_vals, p):
+    if not sorted_vals: return 0.0
+    idx = min(len(sorted_vals)-1, int(len(sorted_vals)*p))
+    return sorted_vals[idx]
+
+def _simulate_battery(r, intervals):
+    """Simulate price-driven battery dispatch for variable_optimised retailers.
+    Returns dict: date -> list of per-interval {'sim_i','sim_e','curt','soc','chg','dis'}.
+    Auto-derives charge/discharge AEMO price thresholds per day."""
+    cap = float(r.get('bat_cap', 41.92))
+    chg_rate = float(r.get('bat_chg', 11)) / 12.0
+    dis_rate = float(r.get('bat_dis', 10)) / 12.0
+    eff = float(r.get('bat_eff', 0.9))
+    soc_min = float(r.get('soc_min', 0.02)) * cap
+    soc_max = float(r.get('soc_max', 1.0)) * cap
+    init_soc = float(r.get('init_soc', 0.5)) * cap
+    off_fit = float(r.get('off_fit', 1.0))
+    sh_pk = float(r.get('sh_pk', 0))
+    chg_pct = float(r.get('chg_pct', 0.3))
+    dis_pct = float(r.get('dis_pct', 0.7))
+
+    by_date = {}
+    for iv in intervals:
+        by_date.setdefault(iv['date'], []).append(iv)
+
+    soc = init_soc
+    results = {}
+    for date in sorted(by_date):
+        day = by_date[date]
+        prices = sorted(iv['aemo'] for iv in day if iv['aemo'] > 0)
+        has_load = sum(iv['load_kwh'] for iv in day) > 0.01
+        has_solar = sum(iv['solar_kwh'] for iv in day) > 0.01
+        if not prices or not has_load:
+            results[date] = [{'sim_i': iv['i_kwh'], 'sim_e': iv['e_kwh'], 'curt': 0.0,
+                              'soc': soc, 'chg': 0.0, 'dis': 0.0} for iv in day]
+            continue
+        chg_thr = _pct(prices, chg_pct)
+        dis_thr = _pct(prices, dis_pct)
+        if dis_thr < chg_thr / eff: dis_thr = chg_thr / eff
+        out = []
+        for iv in day:
+            solar = iv['solar_kwh']; load = iv['load_kwh']
+            aemo = iv['aemo']
+            surplus = solar - load
+            sim_i = sim_e = curt = 0.0
+            chg_kwh = dis_kwh = 0.0
+            if soc < soc_max:
+                max_in = min(chg_rate, (soc_max - soc) / eff)
+                if aemo <= chg_thr and max_in > 0:
+                    take = min(max_in, max(0.0, surplus))
+                    if take > 0:
+                        soc += take * eff; surplus -= take
+                        max_in -= take; chg_kwh += take
+                    if max_in > 0 and (aemo + sh_pk) < 0:
+                        soc += max_in * eff
+                        sim_i += max_in; chg_kwh += max_in
+            if aemo >= dis_thr and soc > soc_min:
+                dis = min(dis_rate, soc - soc_min)
+                deficit = max(0.0, -surplus)
+                serve = min(dis, deficit)
+                surplus += serve; soc -= serve
+                dis_kwh += serve
+                dis_rem = dis - serve
+                if dis_rem > 0 and (aemo * off_fit) > 0:
+                    sim_e += dis_rem; soc -= dis_rem
+                    dis_kwh += dis_rem
+            if surplus > 0:
+                if (aemo * off_fit) > 0:
+                    sim_e += surplus
+                else:
+                    curt += surplus
+            elif surplus < 0:
+                sim_i += -surplus
+            out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt,
+                        'soc': soc, 'chg': chg_kwh, 'dis': dis_kwh})
+        results[date] = out
+    return results
 
 def _fixed_tou_interval(d, r, h, ti, ek):
     imp_rate = r.get('sh_pk', 0)
@@ -245,6 +337,11 @@ def calculate_costs(intervals, retailers):
                 pea_by_period[pk] = cpea - pb
     _cache['pea_periods'] = billing_periods
 
+    bat_sim = {}
+    for r in retailers:
+        if r['model'] == 'variable_optimised':
+            bat_sim[r['name']] = _simulate_battery(r, intervals)
+
     daily_data = {}
     for date_str, day_ivs in iv_by_date.items():
         dd = {}
@@ -255,9 +352,10 @@ def calculate_costs(intervals, retailers):
                 'hr18': 0.0, 'hr19': 0.0, 'hr20': 0.0,
                 'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0,
                 'spExportKwh': 0.0, 'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0,
+                'curtailKwh': 0.0,
             }
         daily_data[date_str] = dd
-        for iv in day_ivs:
+        for iv_idx, iv in enumerate(day_ivs):
             h = iv['h']; ti = iv['i_kwh']; ek = iv['e_kwh']
             for r in retailers:
                 d = dd[r['name']]
@@ -291,8 +389,13 @@ def calculate_costs(intervals, retailers):
                     else:
                         d['export'] += ek * r.get('off_fit', 0)
                 elif r['model'] == 'variable':
-                    d['import'] += ti * (iv['aemo'] + 0.0515)
+                    d['import'] += ti * (iv['aemo'] + r.get('sh_pk', 0))
                     d['export'] += ek * iv['aemo'] * r.get('off_fit', 0)
+                elif r['model'] == 'variable_optimised':
+                    sim = bat_sim[r['name']][date_str][iv_idx]
+                    d['import'] += sim['sim_i'] * (iv['aemo'] + r.get('sh_pk', 0))
+                    d['export'] += sim['sim_e'] * iv['aemo'] * r.get('off_fit', 0)
+                    d['curtailKwh'] += sim['curt']
     
     daily_summary = {}; chart_data = []; five_min_detail = {}
     
@@ -315,13 +418,15 @@ def calculate_costs(intervals, retailers):
                 d['import'] = d['totalImport'] * eff_rate
             
             ri = round(d['import'], 2); re = round(d['export'], 2); rd = round(r.get('dsc', 0), 2)
+            rs = round(r.get('sub', 0), 2)
             gr = r.get('glo_rebate', '0')
             if float(gr) > 0 and d['hr18'] < 0.1 and d['hr19'] < 0.1 and d['hr20'] < 0.1:
                 reb = 1.00
             else: reb = 0.0
-            d['gloRebate'] = reb; d['net'] = round(ri - re + rd - reb, 2)
+            d['gloRebate'] = reb; d['net'] = round(ri - re + rd + rs - reb, 2)
             
-            ds['retailers'][r['name']] = {'dsc': rd, 'import': ri, 'export': re, 'net': d['net'], 'gloRebate': reb}
+            ds['retailers'][r['name']] = {'dsc': rd, 'sub': rs, 'import': ri, 'export': re, 'net': d['net'], 'gloRebate': reb,
+                                          'curtail': round(d.get('curtailKwh', 0), 3)}
             if d['net'] < cheapest_net: cheapest_net = d['net']; cheapest_name = r['name']
         ds['cheapest'] = cheapest_name; daily_summary[date_str] = ds
         cd = {'date': date_str, 'retailers': {}}
@@ -330,14 +435,17 @@ def calculate_costs(intervals, retailers):
         cd['cheapest'] = cheapest_name; chart_data.append(cd)
     
     # 5-min detail
-    for r in [x for x in retailers if x['model'] in ('fixed_tou', 'hybrid')]:
+    for r in [x for x in retailers if x['model'] in ('fixed_tou', 'hybrid', 'variable', 'variable_optimised')]:
         fm = {}
         for date_str in sorted(iv_by_date.keys()):
             outs = []; spu = 0; hr18 = hr19 = hr20 = 0.0; tik = tek = tic = tec = 0.0
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
-            for iv in iv_by_date[date_str]:
+            sims = bat_sim.get(r['name'], {}).get(date_str)
+            for iv_idx, iv in enumerate(iv_by_date[date_str]):
                 h = iv['h']; i_kwh = iv['i_kwh']; e_kwh = iv['e_kwh']
+                if r['model'] == 'variable_optimised' and sims:
+                    i_kwh = sims[iv_idx]['sim_i']; e_kwh = sims[iv_idx]['sim_e']
                 if 18 <= h < 19: hr18 += i_kwh
                 elif 19 <= h < 20: hr19 += i_kwh
                 elif 20 <= h < 21: hr20 += i_kwh
@@ -369,6 +477,10 @@ def calculate_costs(intervals, retailers):
                         elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
                         elif in_window(h, r.get('off_s', 0), r.get('off_e', 0)): er = r.get('off_fit', 0); fit = 'Off'
                     ic = i_kwh * ir; ec = e_kwh * er
+                elif r['model'] in ('variable', 'variable_optimised'):
+                    tou = 'Wsh'; ir = iv['aemo'] + r.get('sh_pk', 0)
+                    er = iv['aemo'] * r.get('off_fit', 0); fit = 'Wsh'
+                    ic = i_kwh * ir; ec = e_kwh * er
                 else:
                     tou = 'Flat'; ir = r.get('sh_pk', 0.2) + pea
                     er = r.get('off_fit', 0); fit = 'Off'
@@ -382,15 +494,19 @@ def calculate_costs(intervals, retailers):
                             er = r.get('sp_fit2', 0); fit = 'Sp2'
                     ic = i_kwh * ir; ec = e_kwh * er
                 tic += ic; tec += ec
-                outs.append({'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
-                             'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)})
+                o = {'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
+                     'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)}
+                if r['model'] == 'variable_optimised' and sims:
+                    o['soc'] = round(sims[iv_idx]['soc'], 2)
+                    o['curt'] = round(sims[iv_idx]['curt'], 3)
+                outs.append(o)
             reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.1 and hr19 < 0.1 and hr20 < 0.1) else 0.0
-            nt = round(tic - tec + r.get('dsc', 0) - reb, 2)
+            nt = round(tic - tec + r.get('dsc', 0) + r.get('sub', 0) - reb, 2)
             outs.append({'time': 'TOTAL', 'ik': round(tik, 3), 'ek': round(tek, 3),
                          'ic': round(tic, 3), 'ec': round(tec, 3),
-                         'dsc': r.get('dsc', 0), 'rebate': reb, 'net': nt,
+                         'dsc': r.get('dsc', 0), 'sub': r.get('sub', 0), 'rebate': reb, 'net': nt,
                          'hr18': round(hr18, 3), 'hr19': round(hr19, 3), 'hr20': round(hr20, 3)})
-            fm[date_str] = {'intervals': outs, 'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'net': nt, 'dsc': r.get('dsc', 0), 'rebate': reb}}
+            fm[date_str] = {'intervals': outs, 'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'net': nt, 'dsc': r.get('dsc', 0), 'sub': r.get('sub', 0), 'rebate': reb}}
         five_min_detail[r['name']] = fm
     
     return daily_data, daily_summary, chart_data, five_min_detail
@@ -552,11 +668,12 @@ def fivemin_html(fm, ds, rname, date_str):
         ic = tot.get('ic', 0); ec = tot.get('ec', 0)
         dsc = tot.get('dsc', 0); reb = tot.get('rebate', 0)
         net = tot.get('net', 0)
+    sub = dr.get('sub', tot.get('sub', 0))
     h = (f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#151515;color:#aaa;font-size:14px;font-weight:bold;border-bottom:1px solid #222">'
          f'<span>{date_str} — {rname}</span>'
          f'<span style="white-space:nowrap">{ik:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; Exp {ek:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; '
          f'Import ${ic:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Export ${ec:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
-         f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
+         f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Sub ${sub:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
          f'Net ${net:.2f}</span></div>')
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
     t += '<th style="padding:4px 6px;text-align:left">Time</th><th style="padding:4px 6px;text-align:left">TOU</th>'
@@ -564,10 +681,15 @@ def fivemin_html(fm, ds, rname, date_str):
     t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
+    t += '<th style="padding:4px 6px;text-align:right">SOC %</th><th style="padding:4px 6px;text-align:right">Curt kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Net $</th></tr></thead><tbody>'
     for iv in ivs:
         if iv.get('time') == 'TOTAL': continue
         nt = iv.get('ic', 0) - iv.get('ec', 0)
+        soc = iv.get('soc')
+        curt = iv.get('curt', 0)
+        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{soc/41.92*100:.0f}</td>' if soc is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
+        curt_cell = f'<td style="padding:2px 6px;text-align:right;color:#f99">{curt:.3f}</td>' if curt else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{iv["time"]}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{iv.get("tou","")}</td>'
               f'<td style="padding:2px 6px;color:#fc8">{iv.get("fit","")}</td>'
@@ -577,6 +699,7 @@ def fivemin_html(fm, ds, rname, date_str):
               f'<td style="padding:2px 6px;text-align:right;color:#888">{iv["er"]:.4f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#ff8a65">{iv["ic"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#8fbc8f">{iv["ec"]:.3f}</td>'
+              f'{soc_cell}{curt_cell}'
               f'<td style="padding:2px 6px;text-align:right;color:{"#ff5252" if nt>=0 else "#4CAF50"}">{nt:.3f}</td></tr>')
     t += '</tbody></table></div>'
     return h + t
@@ -602,6 +725,7 @@ def hourly_html(fm, ds, rname, date_str):
         ic = tot.get('ic', 0); ec = tot.get('ec', 0)
         dsc = tot.get('dsc', 0); reb = tot.get('rebate', 0)
         net = tot.get('net', 0)
+    sub = dr.get('sub', tot.get('sub', 0))
 
     hours = {}
     for iv in ivs:
@@ -620,7 +744,7 @@ def hourly_html(fm, ds, rname, date_str):
            f'<span>{date_str} — {rname}</span>'
            f'<span style="white-space:nowrap">{ik:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; Exp {ek:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; '
            f'Import ${ic:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Export ${ec:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
-           f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
+           f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Sub ${sub:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
            f'Net ${net:.2f}</span></div>')
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
     t += '<th style="padding:4px 6px;text-align:left">Hour</th><th style="padding:4px 6px;text-align:left">TOU</th>'
@@ -895,6 +1019,15 @@ _CFG_FIELDS = [
     ('pea_override', 'PEA Override', False),
     ('glo_rebate', 'Glo Rebate', True),
     ('energymadeeasy_planid', 'Plan ID', False),
+    ('bat_cap', 'Bat Cap kWh', False),
+    ('bat_chg', 'Bat Chg kW', False),
+    ('bat_dis', 'Bat Dis kW', False),
+    ('bat_eff', 'Bat Eff', False),
+    ('soc_min', 'SOC Min', False),
+    ('soc_max', 'SOC Max', False),
+    ('init_soc', 'Init SOC', False),
+    ('chg_pct', 'Chg Pct', False),
+    ('dis_pct', 'Dis Pct', False),
 ]
 _HIDDEN = {'sensor_id'}
 
@@ -915,6 +1048,7 @@ def config_editor_html(rows):
                     '<option value="fixed_tou"%s>fixed_tou</option>' % (' selected' if val == 'fixed_tou' else '') +
                     '<option value="hybrid"%s>hybrid</option>' % (' selected' if val == 'hybrid' else '') +
                     '<option value="variable"%s>variable</option>' % (' selected' if val == 'variable' else '') +
+                    '<option value="variable_optimised"%s>var_optim</option>' % (' selected' if val == 'variable_optimised' else '') +
                     '</select>')
                 cells.append('<td style="padding:2px 4px">' + sel + '</td>')
             elif col == 'name':
@@ -937,7 +1071,8 @@ def config_editor_html(rows):
             blank_cells.append('<td style="padding:2px 4px"><select name="model_' + str(len(rows)+1) + '">'
                 '<option value="fixed_tou">fixed_tou</option>'
                 '<option value="hybrid">hybrid</option>'
-                '<option value="variable">variable</option></select></td>')
+                '<option value="variable">variable</option>'
+                '<option value="variable_optimised">var_optim</option></select></td>')
         elif col == 'name':
             blank_cells.append('<td style="padding:2px 4px"><input name="name_%d" style="width:140px"></td>' % (len(rows)+1))
         elif col == 'glo_rebate':
