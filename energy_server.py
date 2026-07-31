@@ -310,7 +310,7 @@ def calculate_costs(intervals, retailers):
             
             ri = round(d['import'], 2); re = round(d['export'], 2); rd = round(r.get('dsc', 0), 2)
             gr = r.get('glo_rebate', '0')
-            if float(gr) > 0 and d['hr18'] < 0.03 and d['hr19'] < 0.03 and d['hr20'] < 0.03:
+            if float(gr) > 0 and d['hr18'] < 0.1 and d['hr19'] < 0.1 and d['hr20'] < 0.1:
                 reb = 1.00
             else: reb = 0.0
             d['gloRebate'] = reb; d['net'] = round(ri - re + rd - reb, 2)
@@ -378,7 +378,7 @@ def calculate_costs(intervals, retailers):
                 tic += ic; tec += ec
                 outs.append({'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
                              'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)})
-            reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.03 and hr19 < 0.03 and hr20 < 0.03) else 0.0
+            reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.1 and hr19 < 0.1 and hr20 < 0.1) else 0.0
             nt = round(tic - tec + r.get('dsc', 0) - reb, 2)
             outs.append({'time': 'TOTAL', 'ik': round(tik, 3), 'ek': round(tek, 3),
                          'ic': round(tic, 3), 'ec': round(tec, 3),
