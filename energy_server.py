@@ -769,8 +769,9 @@ def calculate_costs(intervals, retailers):
         measured_imp = sum(iv['i_kwh'] for iv in day_ivs)
         measured_exp = sum(iv['e_kwh'] for iv in day_ivs)
         measured_solar = sum(iv.get('solar_kwh', 0.0) for iv in day_ivs)
+        measured_load = sum(iv.get('load_kwh', 0.0) for iv in day_ivs)
         ds = {'totalImport': round(measured_imp, 3), 'totalExport': round(measured_exp, 3),
-              'totalSolar': round(measured_solar, 3), 'retailers': {}}
+              'totalSolar': round(measured_solar, 3), 'totalLoad': round(measured_load, 3), 'retailers': {}}
         cheapest_net = float('inf'); cheapest_name = ''
         for r in retailers:
             d = daily_data[date_str][r['name']]
@@ -907,12 +908,114 @@ def daily_report_html(daily_summary, retailers, days=None):
     html += '</tbody></table></div>'
     return html
 
+_PVGIS_TERRIGAL = {1: 4.71, 2: 4.24, 3: 3.58, 4: 2.91, 5: 2.28, 6: 1.78,
+                   7: 2.14, 8: 2.95, 9: 3.84, 10: 4.42, 11: 4.86, 12: 5.04}
+_EST_MONTHS_AHEAD = 4
+
+def _estimate_months(daily_summary, retailers):
+    """Guestimate values for months after the last observed month.
+
+    Solar: PVGIS expected production for Terrigal, scaled by the factor the
+    user's system achieves relative to the area average (per season). Other
+    flows (imp/exp/load) and retailer nets are linearly interpolated between
+    the last observed month and the next observed month around the annual
+    cycle. Returns {month_key: {'imp','exp','solar','days','retailers',}}.
+    Returns {} when no estimates are needed.
+    """
+    if not daily_summary:
+        return {}
+    rnames = [r['name'] for r in retailers]
+    obs = {}
+    for ds, d in daily_summary.items():
+        m = ds[:7]
+        if m not in obs:
+            obs[m] = {'imp': 0.0, 'exp': 0.0, 'solar': 0.0, 'load': 0.0, 'days': 0,
+                      'ret': {rn: 0.0 for rn in rnames}}
+        om = obs[m]
+        om['imp'] += d['totalImport']; om['exp'] += d['totalExport']
+        om['solar'] += d.get('totalSolar', 0); om['load'] += d.get('totalLoad', 0)
+        om['days'] += 1
+        for rn in rnames:
+            om['ret'][rn] += d['retailers'].get(rn, {}).get('net', 0)
+    last = sorted(obs.keys())[-1]
+    last_y, last_m = int(last[:4]), int(last[5:7])
+
+    def daily(key):
+        om = obs.get(key)
+        if not om or not om['days']:
+            return None
+        return {'imp': om['imp'] / om['days'], 'exp': om['exp'] / om['days'],
+                'solar': om['solar'] / om['days'], 'load': om['load'] / om['days'],
+                'ret': {rn: om['ret'][rn] / om['days'] for rn in rnames}}
+
+    # Seasonal PVGIS factor the system actually achieves (obs solar / PVGIS)
+    season_f = {'summer': [], 'autumn': [], 'winter': [], 'spring': []}
+    def season_of(mo):
+        if mo in (12, 1, 2): return 'summer'
+        if mo in (3, 4, 5): return 'autumn'
+        if mo in (6, 7, 8): return 'winter'
+        return 'spring'
+    for m, om in obs.items():
+        if not om['days']: continue
+        mo = int(m[5:7])
+        if mo in _PVGIS_TERRIGAL:
+            season_f[season_of(mo)].append((om['solar'] / om['days']) / _PVGIS_TERRIGAL[mo])
+    def seavg(season):
+        v = season_f[season]
+        return sum(v) / len(v) if v else None
+    wf = seavg('winter'); sf = seavg('summer')
+    def pvgis_factor(mo):
+        s = season_of(mo)
+        if seavg(s) is not None:
+            return seavg(s)
+        if s == 'spring' and wf is not None and sf is not None:
+            frac = (mo - 9) / 2.0
+            return wf + (sf - wf) * frac
+        return sf if sf is not None else (wf if wf is not None else 10.0)
+
+    # Interpolation anchors: last observed month and the next observed around cycle
+    obs_months = sorted(int(m[5:7]) for m in obs)
+    nxt = next((mo for mo in obs_months if mo > last_m), None)
+    if nxt is None:
+        nxt = obs_months[0]
+    a_key = f"{last_y:04d}-{last_m:02d}"
+    b_key = f"{last_y:04d}-{nxt:02d}"
+    if b_key not in obs:
+        b_key = f"{last_y - 1:04d}-{nxt:02d}"
+    if b_key not in obs:
+        b_key = f"{last_y + 1:04d}-{nxt:02d}"
+    a = daily(a_key); b = daily(b_key)
+    if a is None or b is None:
+        return {}
+    span = (nxt - last_m) % 12
+    if span == 0: span = 12
+
+    est = {}
+    y, mo = last_y, last_m
+    import calendar
+    for _ in range(_EST_MONTHS_AHEAD):
+        mo += 1
+        if mo > 12:
+            mo = 1; y += 1
+        t = (mo - last_m) % 12 / span
+        est_solar = _PVGIS_TERRIGAL[mo] * pvgis_factor(mo)
+        est_imp = a['imp'] + (b['imp'] - a['imp']) * t
+        est_exp = a['exp'] + (b['exp'] - a['exp']) * t
+        days = calendar.monthrange(y, mo)[1]
+        ret = {}
+        for rn in rnames:
+            ret[rn] = (a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t) * days
+        mk = f"{y:04d}-{mo:02d}"
+        est[mk] = {'imp': est_imp * days, 'exp': est_exp * days,
+                   'solar': est_solar * days, 'days': days, 'retailers': ret}
+    return est
+
 def monthly_report_html(daily_summary, retailers):
     months = {}
     for ds, d in sorted(daily_summary.items()):
         m = ds[:7]
         if m not in months:
-            months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'days': 0, 'retailers': {}}
+            months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'days': 0, 'retailers': {}, 'est': False}
         months[m]['imp'] += d['totalImport']
         months[m]['exp'] += d['totalExport']
         months[m]['solar'] += d.get('totalSolar', 0)
@@ -921,11 +1024,14 @@ def monthly_report_html(daily_summary, retailers):
             rn = r['name']
             v = d['retailers'].get(rn, {}).get('net', 0)
             months[m]['retailers'][rn] = months[m]['retailers'].get(rn, 0) + v
+    has_est = False
+    for m, mm in _estimate_months(daily_summary, retailers).items():
+        mm['est'] = True; months[m] = mm; has_est = True
     html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">'
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Month</th>'
     html += '<th style="padding:4px;text-align:right">Avg Imp kWh</th><th style="padding:4px;text-align:right">Avg Exp kWh</th>'
-    html += '<th style="padding:4px;text-align:right">Avg Solar/After-Exp kWh</th>'
+    html += '<th style="padding:4px;text-align:right">Avg Solar kWh</th>'
     for r in retailers:
         html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
@@ -934,25 +1040,30 @@ def monthly_report_html(daily_summary, retailers):
         cheapest = min(mm['retailers'], key=lambda rn: mm['retailers'][rn])
         avg_imp = mm['imp'] / mm['days'] if mm['days'] else 0.0
         avg_exp = mm['exp'] / mm['days'] if mm['days'] else 0.0
-        avg_sol = (mm['solar'] - mm['exp']) / mm['days'] if mm['days'] else 0.0
-        html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1">{m}</td>'
+        avg_sol = mm['solar'] / mm['days'] if mm['days'] else 0.0
+        if mm.get('est'):
+            rowbg = '#0d1420'; mlbl = f'~{m}'; mcol = '#5b7fbf'; estcls = 'font-style:italic'
+            labcol = '#7b8ea8'
+        else:
+            rowbg = '#111'; mlbl = m; mcol = '#aaa'; estcls = ''; labcol = '#aaa'
+        html += f'<tr style="background:{rowbg}"><td style="padding:4px;text-align:left;color:{labcol};{estcls};position:sticky;left:0;background:{rowbg};z-index:1">{mlbl}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{avg_exp:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol:.1f}</td>'
         for r in retailers:
             v = mm['retailers'].get(r['name'], 0)
             c = '#4CAF50' if r['name'] == cheapest else '#ccc'
-            html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
+            html += f'<td style="padding:4px;text-align:right;color:{c};{estcls}">${v:.2f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
-    t_imp = sum(mm['imp'] for mm in months.values())
-    t_exp = sum(mm['exp'] for mm in months.values())
-    t_days = sum(mm['days'] for mm in months.values())
-    t_solar = sum(mm['solar'] for mm in months.values())
-    t_ret = {r['name']: sum(mm['retailers'].get(r['name'], 0) for mm in months.values()) for r in retailers}
+    t_imp = sum(mm['imp'] for mm in months.values() if not mm.get('est'))
+    t_exp = sum(mm['exp'] for mm in months.values() if not mm.get('est'))
+    t_days = sum(mm['days'] for mm in months.values() if not mm.get('est'))
+    t_solar = sum(mm['solar'] for mm in months.values() if not mm.get('est'))
+    t_ret = {r['name']: sum(mm['retailers'].get(r['name'], 0) for mm in months.values() if not mm.get('est')) for r in retailers}
     t_cheapest = min(t_ret, key=lambda rn: t_ret[rn])
     avg_imp_t = t_imp / t_days if t_days else 0.0
     avg_exp_t = t_exp / t_days if t_days else 0.0
-    avg_sol_t = (t_solar - t_exp) / t_days if t_days else 0.0
+    avg_sol_t = t_solar / t_days if t_days else 0.0
     html += '<tr style="background:#222;font-weight:bold"><td style="padding:4px;text-align:left;color:#fff;position:sticky;left:0;background:#222;z-index:1">TOTAL</td>'
     html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp_t:.1f}</td><td style="padding:4px;text-align:right;color:#fc8">{avg_exp_t:.1f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol_t:.1f}</td>'
@@ -962,6 +1073,10 @@ def monthly_report_html(daily_summary, retailers):
         html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#4CAF50">{t_cheapest}</td></tr>'
     html += '</tbody></table></div>'
+    if has_est:
+        html += ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:6px 4px">'
+                 'Rows prefixed with ~ are guestimates (PVGIS solar expectations calibrated to '
+                 'your system + seasonal load averages). They drop off automatically once actuals arrive.</div>')
     return html
 
 _SEASONS = [('Summer', [12, 1, 2]), ('Autumn', [3, 4, 5]), ('Winter', [6, 7, 8]), ('Spring', [9, 10, 11])]
