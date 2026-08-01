@@ -240,13 +240,18 @@ def _fixed_tou_interval(d, r, h, ti, ek):
     imp_rate = r.get('sh_pk', 0)
     if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
         imp_rate = r.get('off_pk', 0)
-        if r.get('off_limit', 0) > 0 and r.get('off_pk', 0) == 0:
+        if r.get('off_limit', 0) > 0:
             fu = d.get('freeUsage', 0)
             if fu < r['off_limit']:
                 fp = min(ti, r['off_limit'] - fu)
                 d['freeUsage'] = fu + fp
-                d['import'] += fp * imp_rate + (ti - fp) * r.get('sh_pk', 0)
+                bal = r.get('off_pk', 0)
+                if bal == 0:
+                    bal = r.get('sh_pk', 0)
+                d['import'] += (ti - fp) * bal
                 imp_rate = None
+            elif r.get('off_pk', 0) == 0:
+                imp_rate = r.get('sh_pk', 0)
     elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
         imp_rate = r.get('ev_pk', 0)
     elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
@@ -406,7 +411,11 @@ def calculate_costs(intervals, retailers):
         for r in retailers:
             d = daily_data[date_str][r['name']]
             if r['model'] == 'fixed_tou':
-                da_imp = (d['offKwh'] * r.get('off_pk', 0) + d['shKwh'] * r.get('sh_pk', 0) +
+                off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
+                off_rate = r.get('off_pk', 0)
+                if off_rate == 0 and r.get('off_limit', 0) > 0:
+                    off_rate = r.get('sh_pk', 0)
+                da_imp = (off_bal * off_rate + d['shKwh'] * r.get('sh_pk', 0) +
                           d['pkKwh'] * r.get('pk_pk', 0) + d['evKwh'] * r.get('ev_pk', 0))
                 da_exp = (d['spExportKwh'] * r.get('sp_fit', 0) + d['pkExportKwh'] * r.get('pk_fit', 0) +
                           d['shExportKwh'] * r.get('sh_fit', 0) + d['offExportKwh'] * r.get('off_fit', 0))
