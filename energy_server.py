@@ -1081,28 +1081,40 @@ def monthly_report_html(daily_summary, retailers):
 
 _SEASONS = [('Summer', [12, 1, 2]), ('Autumn', [3, 4, 5]), ('Winter', [6, 7, 8]), ('Spring', [9, 10, 11])]
 
+def _season_label(y, mo):
+    if mo == 12:
+        return f'Summer {y}/{y+1}'
+    if mo <= 2:
+        return f'Summer {y-1}/{y}'
+    if mo <= 5:
+        return f'Autumn {y}'
+    if mo <= 8:
+        return f'Winter {y}'
+    return f'Spring {y}'
+
 def seasonal_report_html(daily_summary, retailers):
     seasons = {}
     for ds, d in sorted(daily_summary.items()):
         y = int(ds[:4]); mo = int(ds[5:7])
-        if mo == 12:
-            label = f'Summer {y}/{y+1}'
-        elif mo <= 2:
-            label = f'Summer {y-1}/{y}'
-        elif mo <= 5:
-            label = f'Autumn {y}'
-        elif mo <= 8:
-            label = f'Winter {y}'
-        else:
-            label = f'Spring {y}'
+        label = _season_label(y, mo)
         if label not in seasons:
-            seasons[label] = {'imp': 0, 'exp': 0, 'retailers': {}}
+            seasons[label] = {'imp': 0, 'exp': 0, 'retailers': {}, 'est': False}
         seasons[label]['imp'] += d['totalImport']
         seasons[label]['exp'] += d['totalExport']
         for r in retailers:
             rn = r['name']
             v = d['retailers'].get(rn, {}).get('net', 0)
             seasons[label]['retailers'][rn] = seasons[label]['retailers'].get(rn, 0) + v
+    has_est = False
+    for m, mm in _estimate_months(daily_summary, retailers).items():
+        y = int(m[:4]); mo = int(m[5:7])
+        label = _season_label(y, mo)
+        if label in seasons:
+            continue
+        seasons[label] = {'imp': mm['imp'], 'exp': mm['exp'],
+                          'retailers': {rn: mm['retailers'].get(rn, 0) for rn in [r['name'] for r in retailers]},
+                          'est': True}
+        has_est = True
     html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">'
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Season</th>'
@@ -1113,17 +1125,21 @@ def seasonal_report_html(daily_summary, retailers):
     for s in sorted(seasons.keys(), reverse=True):
         ss = seasons[s]
         cheapest = min(ss['retailers'], key=lambda rn: ss['retailers'][rn])
-        html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1">{s}</td>'
+        if ss.get('est'):
+            rowbg = '#0d1420'; labcol = '#7b8ea8'; estcls = 'font-style:italic'; slbl = f'~{s}'
+        else:
+            rowbg = '#111'; labcol = '#aaa'; estcls = ''; slbl = s
+        html += f'<tr style="background:{rowbg}"><td style="padding:4px;text-align:left;color:{labcol};{estcls};position:sticky;left:0;background:{rowbg};z-index:1">{slbl}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{ss["imp"]:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{ss["exp"]:.1f}</td>'
         for r in retailers:
             v = ss['retailers'].get(r['name'], 0)
             c = '#4CAF50' if r['name'] == cheapest else '#ccc'
-            html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
+            html += f'<td style="padding:4px;text-align:right;color:{c};{estcls}">${v:.2f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
-    t_imp = sum(ss['imp'] for ss in seasons.values())
-    t_exp = sum(ss['exp'] for ss in seasons.values())
-    t_ret = {r['name']: sum(ss['retailers'].get(r['name'], 0) for ss in seasons.values()) for r in retailers}
+    t_imp = sum(ss['imp'] for ss in seasons.values() if not ss.get('est'))
+    t_exp = sum(ss['exp'] for ss in seasons.values() if not ss.get('est'))
+    t_ret = {r['name']: sum(ss['retailers'].get(r['name'], 0) for ss in seasons.values() if not ss.get('est')) for r in retailers}
     t_cheapest = min(t_ret, key=lambda rn: t_ret[rn])
     html += '<tr style="background:#222;font-weight:bold"><td style="padding:4px;text-align:left;color:#fff;position:sticky;left:0;background:#222;z-index:1">TOTAL</td>'
     html += f'<td style="padding:4px;text-align:right;color:#8cf">{t_imp:.1f}</td><td style="padding:4px;text-align:right;color:#fc8">{t_exp:.1f}</td>'
@@ -1133,6 +1149,10 @@ def seasonal_report_html(daily_summary, retailers):
         html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#4CAF50">{t_cheapest}</td></tr>'
     html += '</tbody></table></div>'
+    if has_est:
+        html += ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:6px 4px">'
+                 'Rows prefixed with ~ are guestimates (PVGIS solar expectations calibrated to '
+                 'your system + seasonal load averages). They drop off automatically once actuals arrive.</div>')
     return html
 
 def fivemin_html(fm, ds, rname, date_str):
