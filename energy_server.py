@@ -18,6 +18,8 @@ Endpoints:
     /api/daily-data        JSON daily summary
     /api/retailers         JSON retailer configs
     /api/chart-data        JSON chart series
+    /api/settings          JSON optimise-all flag state
+    POST /api/optimise     Toggle optimised battery dispatch for all retailers
     /api/retailer-config   HTML config editor (GET) / save (POST)
 """
 
@@ -31,6 +33,8 @@ from pathlib import Path
 
 CSV_PATH = '5minelecNEW.csv'
 CONFIG_PATH = 'retailer_config.csv'
+SETTINGS_PATH = 'settings.json'
+OPTIMISE_ALL = False
 PORT = 8080
 DAEMON = False
 
@@ -49,11 +53,31 @@ def _file_hash(path):
     except OSError:
         return ''
 
+def load_settings():
+    global OPTIMISE_ALL
+    try:
+        with open(SETTINGS_PATH) as f:
+            OPTIMISE_ALL = bool(json.load(f).get('optimise_all', False))
+    except Exception:
+        OPTIMISE_ALL = False
+
+def save_settings(patch):
+    s = {}
+    try:
+        with open(SETTINGS_PATH) as f:
+            s = json.load(f)
+    except Exception:
+        pass
+    s.update(patch)
+    with open(SETTINGS_PATH, 'w') as f:
+        json.dump(s, f)
+
 def ensure_computed():
-    """Recompute if CSV or config changed since last computation."""
+    """Recompute if CSV/config changed, or the optimise-all flag changed."""
+    load_settings()
     csv_hash = _file_hash(CSV_PATH)
     cfg_hash = _file_hash(CONFIG_PATH)
-    combined = csv_hash + '|' + cfg_hash
+    combined = csv_hash + '|' + cfg_hash + '|' + ('1' if OPTIMISE_ALL else '0')
     if combined == _cache['data_hash'] and _cache['daily_summary']:
         return
     log.info('Recomputing costs (CSV/config changed)...')
@@ -78,6 +102,50 @@ def in_window(h, s, e):
     if s <= e: return s <= h < e
     else: return h >= s or h < e
 
+def _imp_rate_at(r, iv, pea):
+    """Retailer's marginal import $/kWh at an interval (for optimised dispatch ranking)."""
+    h = iv['h']
+    mdl = r.get('model')
+    if mdl == 'hybrid':
+        return float(r.get('sh_pk', 0.2)) + pea
+    if mdl == 'variable' or mdl == 'variable_optimised':
+        return iv['aemo'] + float(r.get('sh_pk', 0))
+    if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
+        return r.get('off_pk', 0)
+    if in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
+        return r.get('ev_pk', 0)
+    if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
+        return r.get('pk_pk', 0)
+    return r.get('sh_pk', 0)
+
+def _exp_rate_at(r, iv):
+    """Retailer's marginal feed-in $/kWh at an interval (for optimised dispatch ranking)."""
+    h = iv['h']
+    mdl = r.get('model')
+    if mdl == 'variable' or mdl == 'variable_optimised':
+        return iv['aemo'] * float(r.get('off_fit', 1.0))
+    if mdl == 'hybrid':
+        if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)) and r.get('sp_limit', 0) > 0:
+            return r.get('sp_fit', 0)
+        return r.get('off_fit', 0)
+    er = r.get('sh_fit', 0)
+    if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)) and r.get('sp_limit', 0) > 0:
+        er = r.get('sp_fit', 0)
+    elif in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)):
+        er = r.get('pk_fit', 0)
+    elif in_window(h, r.get('off_fit_s', 0), r.get('off_fit_e', 0)):
+        er = r.get('off_fit', 0)
+    return er
+
+def _battery_spec(retailers):
+    """Shared battery spec: first retailer configured with a battery, else defaults."""
+    for r in retailers:
+        if float(r.get('bat_cap', 0)) > 0:
+            return r
+    return {'bat_cap': 41.92, 'bat_chg': 11.0, 'bat_dis': 10.0, 'bat_eff': 0.9,
+            'soc_min': 0.02, 'soc_max': 1.0, 'init_soc': 0.5, 'inv_cap': 10.0,
+            'ac_cap': 14.5}
+
 def load_retailer_config(path):
     retailers = []
     numeric_fields = [
@@ -88,12 +156,13 @@ def load_retailer_config(path):
         'pk_fit_s', 'pk_fit_e', 'sp_fit_s', 'sp_fit_e',
         'fixed_export', 'ev_s', 'ev_e', 'ev_pk', 'off_limit', 'billing_day',
         'pea_base', 'pea_override', 'bat_cap', 'bat_chg', 'bat_dis', 'bat_eff',
-        'soc_min', 'soc_max', 'init_soc', 'chg_pct', 'dis_pct'
+        'soc_min', 'soc_max', 'init_soc', 'chg_pct', 'dis_pct', 'inv_cap',
+        'ac_cap'
     ]
     with open(path, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            r = {k.strip(): v.strip() for k, v in row.items()}
+            r = {k.strip(): (v.strip() if v is not None else '') for k, v in row.items()}
             for fn in numeric_fields:
                 if fn in r:
                     try: r[fn] = float(r[fn])
@@ -158,81 +227,217 @@ def extract_intervals(rows):
 
 # ─── Cost Calculator ─────────────────────────────────────────────────────────
 
-def _pct(sorted_vals, p):
-    if not sorted_vals: return 0.0
-    idx = min(len(sorted_vals)-1, int(len(sorted_vals)*p))
-    return sorted_vals[idx]
+def _dispatch_battery(r, intervals, pea_by_period, bat=None):
+    """Tariff-aware, day-level battery dispatch for ANY retailer model.
 
-def _simulate_battery(r, intervals):
-    """Simulate price-driven battery dispatch for variable_optimised retailers.
-    Returns dict: date -> list of per-interval {'sim_i','sim_e','curt','soc','chg','dis'}.
-    Auto-derives charge/discharge AEMO price thresholds per day."""
-    cap = float(r.get('bat_cap', 41.92))
-    chg_rate = float(r.get('bat_chg', 11)) / 12.0
-    dis_rate = float(r.get('bat_dis', 10)) / 12.0
-    eff = float(r.get('bat_eff', 0.9))
-    soc_min = float(r.get('soc_min', 0.02)) * cap
-    soc_max = float(r.get('soc_max', 1.0)) * cap
-    init_soc = float(r.get('init_soc', 0.5)) * cap
-    off_fit = float(r.get('off_fit', 1.0))
-    sh_pk = float(r.get('sh_pk', 0))
-    chg_pct = float(r.get('chg_pct', 0.3))
-    dis_pct = float(r.get('dis_pct', 0.7))
+    Simulates how the battery would be run to get the most out of that retailer.
+    Battery energy is drawn from three sources (charged chronologically, rate and
+    SOC limited): initial SOC, stored solar surplus (free), and grid charging at
+    the retailer's cheap/free import windows. It is discharged to the highest-value
+    uses first — avoid the retailer's most expensive imports, then earn its best
+    feed-in credits — respecting per-interval discharge rates and chronological
+    availability. Grid-bought energy is only used when the round trip is profitable
+    (sell value > buy rate / efficiency), so an optimised dispatch can never be
+    economically worse than simply leaving the battery idle.
+    `bat` overrides the physical battery spec so all retailers share one battery.
+    Returns dict: date -> per-interval {'sim_i','sim_e','curt','soc','chg','dis'}.
+    """
+    b = bat if bat is not None else r
+    cap = float(b.get('bat_cap', 41.92))
+    chg_rate = float(b.get('bat_chg', 11)) / 12.0
+    dis_rate = float(b.get('bat_dis', 10)) / 12.0
+    eff = float(b.get('bat_eff', 0.9))
+    inv_kw = float(b.get('inv_cap', 10))
+    inv_wh = inv_kw / 12.0
+    ac_kw = float(b.get('ac_cap', 14.5))
+    ac_wh = ac_kw / 12.0
+    soc_min = float(b.get('soc_min', 0.02)) * cap
+    soc_max = float(b.get('soc_max', 1.0)) * cap
+    init_soc = float(b.get('init_soc', 0.5)) * cap
+    off_limit = float(r.get('off_limit', 0))
 
     by_date = {}
     for iv in intervals:
         by_date.setdefault(iv['date'], []).append(iv)
 
-    soc = init_soc
     results = {}
     for date in sorted(by_date):
         day = by_date[date]
-        prices = sorted(iv['aemo'] for iv in day if iv['aemo'] > 0)
-        has_load = sum(iv['load_kwh'] for iv in day) > 0.01
-        has_solar = sum(iv['solar_kwh'] for iv in day) > 0.01
-        if not prices or not has_load:
+        n = len(day)
+        bp_key = _billing_period_key(date, int(r.get('billing_day', 4)))
+        pea = pea_by_period.get(bp_key, 0.0)
+        imp = [_imp_rate_at(r, iv, pea) for iv in day]
+        exp = [_exp_rate_at(r, iv) for iv in day]
+        load = [iv['load_kwh'] for iv in day]
+        solar = [iv['solar_kwh'] for iv in day]
+        day_energy = sum(load) + sum(solar) + sum(iv['i_kwh'] + iv['e_kwh'] for iv in day)
+        if day_energy < 0.01:
             results[date] = [{'sim_i': iv['i_kwh'], 'sim_e': iv['e_kwh'], 'curt': 0.0,
-                              'soc': soc, 'chg': 0.0, 'dis': 0.0} for iv in day]
+                              'soc': init_soc, 'chg': 0.0, 'dis': 0.0} for iv in day]
             continue
-        chg_thr = _pct(prices, chg_pct)
-        dis_thr = _pct(prices, dis_pct)
-        if dis_thr < chg_thr / eff: dis_thr = chg_thr / eff
+
+        deficit = [max(0.0, load[i] - solar[i]) for i in range(n)]
+        surplus = [max(0.0, solar[i] - load[i]) for i in range(n)]
+
+        # Feasibility guard: if the measured profile itself demands a battery
+        # burst beyond the physical battery's capability (e.g. a load spike the
+        # meter rounds into a single interval), it is not a reproducible baseline
+        # to beat, so keep the measured profile for that day. This keeps the
+        # optimised result never-worse-than-measured on every feasible day.
+        burst = max(abs((load[i] - solar[i]) - (day[i]['i_kwh'] - day[i]['e_kwh'])) for i in range(n))
+        exp_ok = all(day[i]['e_kwh'] <= 1e-9 or day[i]['e_kwh'] + day[i]['load_kwh'] <= inv_wh * 1.25 for i in range(n))
+        if burst > max(dis_rate, chg_rate) * 1.2 or not exp_ok:
+            results[date] = [{'sim_i': day[i]['i_kwh'], 'sim_e': day[i]['e_kwh'], 'curt': 0.0,
+                              'soc': init_soc, 'chg': 0.0, 'dis': 0.0} for i in range(n)]
+            continue
+
+        # effective grid-buy rate for battery charging; an off-peak free allowance
+        # (off_limit) makes the off window cost zero up to the daily pool
+        buy = list(imp)
+        if off_limit > 0:
+            for i in range(n):
+                if in_window(day[i]['h'], r.get('off_s', 0), r.get('off_e', 0)):
+                    buy[i] = 0.0
+        cheap_rate = min(buy) if buy else 0.0
+
+        # ---- charge phase: solar surplus first (free, chronological) ----
+        # Charge rate tapers from full (11 kW) down to 0 as SOC rises from 90% to
+        # 100%, matching the inverter's behaviour near full charge.
+        def taper_rate(s):
+            if s <= 0.9 * soc_max:
+                return 1.0
+            return max(0.0, min(1.0, (soc_max - s) / max(1e-9, 0.1 * soc_max)))
+
+        soc = init_soc
+        solar_chg = [0.0] * n
+        cum_free = [0.0] * n
+        acc = init_soc - soc_min
+        for i in range(n):
+            if surplus[i] > 0:
+                c = min(surplus[i], chg_rate * taper_rate(soc), (soc_max - soc) / eff)
+                soc += c * eff
+                solar_chg[i] = c
+            acc += solar_chg[i] * eff
+            cum_free[i] = acc
+        free_E = max(0.0, soc - soc_min)
+
+        # ---- discharge uses (value-ordered): avoid imports, then earn feed-in ----
+        def build_uses(free_cap=True):
+            uses = []
+            for i in range(n):
+                if deficit[i] > 0:
+                    uses.append((imp[i], i, 'def'))
+                if exp[i] > 0:
+                    uses.append((exp[i], i, 'exp'))
+            uses.sort(key=lambda u: -u[0])
+            return uses
+
+        dis_def = [0.0] * n; dis_exp = [0.0] * n
+        used_by = [0.0] * n
+
+        def alloc_free(i, typ, amt):
+            if typ == 'def':
+                dis_def[i] += amt
+            else:
+                dis_exp[i] += amt
+            for j in range(i, n):
+                used_by[j] += amt
+
+        remaining = free_E
+        for val, i, typ in build_uses():
+            if remaining <= 0:
+                break
+            room = dis_rate - dis_def[i] - dis_exp[i]
+            if room <= 0:
+                continue
+            ar = max(0.0, cum_free[i] - used_by[i])
+            if typ == 'def':
+                tk = min(deficit[i] - dis_def[i], room, remaining, ar)
+            else:
+                tk = min(room, remaining, ar)
+            tk = max(0.0, tk)
+            if tk <= 0:
+                continue
+            alloc_free(i, typ, tk)
+            remaining -= tk
+
+        # ---- grid arbitrage: cheap/free window re-charges the battery and
+        #      discharges it only into uses that clear the round-trip cost ----
+        unmet = [max(0.0, deficit[i] - dis_def[i]) for i in range(n)]
+        # battery room available during the cheap window (after solar charging)
+        room_start = max(0.0, soc_max - init_soc)
+        arb_charge_cap = min(chg_rate * sum(1 for i in range(n) if buy[i] <= cheap_rate + 1e-12),
+                             room_start)
+        grid_def = [0.0] * n; grid_exp = [0.0] * n
+        budget = arb_charge_cap * eff
+        cum_grid = [0.0] * n
+        gacc = 0.0
+        for i in range(n):
+            if buy[i] <= cheap_rate + 1e-12:
+                gacc += chg_rate
+            cum_grid[i] = gacc
+        used_grid = [0.0] * n
+        for val, i, typ in build_uses():
+            if budget <= 0:
+                break
+            if val <= cheap_rate / eff:
+                break
+            room = dis_rate - dis_def[i] - dis_exp[i] - grid_def[i] - grid_exp[i]
+            if room <= 0:
+                continue
+            ar = max(0.0, cum_grid[i] - used_grid[i])
+            if typ == 'def':
+                tk = min(unmet[i] - grid_def[i], room, budget, ar)
+            else:
+                tk = min(room, budget, ar)
+            tk = max(0.0, tk)
+            if tk <= 0:
+                continue
+            if typ == 'def':
+                grid_def[i] += tk
+            else:
+                grid_exp[i] += tk
+            budget -= tk
+            for j in range(i, n):
+                used_grid[j] += tk
+        grid_chg = [0.0] * n
+        fund = (sum(grid_def) + sum(grid_exp)) / eff
+        fund_rem = fund
+        soc_g = init_soc
+        for i in range(n):
+            soc_g = min(soc_max, soc_g + solar_chg[i] * eff)
+            if buy[i] > cheap_rate + 1e-12:
+                continue
+            if fund_rem <= 0:
+                break
+            # AC-side import limit: battery charge + net load <= ac_cap.
+            chg_room = max(0.0, ac_wh - max(0.0, load[i] - solar[i]))
+            tk = min(chg_rate * taper_rate(soc_g), fund_rem, chg_room,
+                     max(0.0, (soc_max - soc_g) / eff))
+            tk = max(0.0, tk)
+            grid_chg[i] += tk
+            soc_g += tk * eff
+            fund_rem -= tk
+        g_total = sum(grid_chg)
+        if fund > 0 and g_total < fund - 1e-9:
+            fscale = g_total / fund
+            grid_def = [v * fscale for v in grid_def]
+            grid_exp = [v * fscale for v in grid_exp]
+
         out = []
-        for iv in day:
-            solar = iv['solar_kwh']; load = iv['load_kwh']
-            aemo = iv['aemo']
-            surplus = solar - load
-            sim_i = sim_e = curt = 0.0
-            chg_kwh = dis_kwh = 0.0
-            if soc < soc_max:
-                max_in = min(chg_rate, (soc_max - soc) / eff)
-                if aemo <= chg_thr and max_in > 0:
-                    take = min(max_in, max(0.0, surplus))
-                    if take > 0:
-                        soc += take * eff; surplus -= take
-                        max_in -= take; chg_kwh += take
-                    if max_in > 0 and (aemo + sh_pk) < 0:
-                        soc += max_in * eff
-                        sim_i += max_in; chg_kwh += max_in
-            if aemo >= dis_thr and soc > soc_min:
-                dis = min(dis_rate, soc - soc_min)
-                deficit = max(0.0, -surplus)
-                serve = min(dis, deficit)
-                surplus += serve; soc -= serve
-                dis_kwh += serve
-                dis_rem = dis - serve
-                if dis_rem > 0 and (aemo * off_fit) > 0:
-                    sim_e += dis_rem; soc -= dis_rem
-                    dis_kwh += dis_rem
-            if surplus > 0:
-                if (aemo * off_fit) > 0:
-                    sim_e += surplus
-                else:
-                    curt += surplus
-            elif surplus < 0:
-                sim_i += -surplus
-            out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt,
-                        'soc': soc, 'chg': chg_kwh, 'dis': dis_kwh})
+        soc2 = init_soc
+        for i, iv in enumerate(day):
+            chg_tot = solar_chg[i] + grid_chg[i]
+            dis_tot = dis_def[i] + dis_exp[i] + grid_def[i] + grid_exp[i]
+            net = load[i] - solar[i] + grid_chg[i] - dis_tot
+            sim_i = max(0.0, net)
+            sim_e = max(0.0, -net)
+            exp_room = max(0.0, inv_wh - load[i])
+            curt = max(0.0, sim_e - exp_room)
+            sim_e = min(sim_e, exp_room)
+            soc2 = min(soc_max, max(soc_min, soc2 + chg_tot * eff - dis_tot))
+            out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt, 'soc': soc2,
+                        'chg': chg_tot, 'dis': dis_tot})
         results[date] = out
     return results
 
@@ -342,10 +547,15 @@ def calculate_costs(intervals, retailers):
                 pea_by_period[pk] = cpea - pb
     _cache['pea_periods'] = billing_periods
 
-    bat_sim = {}
-    for r in retailers:
-        if r['model'] == 'variable_optimised':
-            bat_sim[r['name']] = _simulate_battery(r, intervals)
+    sims = {}
+    if OPTIMISE_ALL:
+        bat = _battery_spec(retailers)
+        for r in retailers:
+            sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, bat)
+    else:
+        for r in retailers:
+            if r['model'] == 'variable_optimised':
+                sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, _battery_spec(retailers))
 
     daily_data = {}
     for date_str, day_ivs in iv_by_date.items():
@@ -360,10 +570,16 @@ def calculate_costs(intervals, retailers):
                 'curtailKwh': 0.0,
             }
         daily_data[date_str] = dd
+        sday = {r['name']: sims.get(r['name'], {}).get(date_str) for r in retailers}
         for iv_idx, iv in enumerate(day_ivs):
-            h = iv['h']; ti = iv['i_kwh']; ek = iv['e_kwh']
+            h = iv['h']
             for r in retailers:
                 d = dd[r['name']]
+                si = sday[r['name']]
+                ti = iv['i_kwh']; ek = iv['e_kwh']
+                if si:
+                    ti = si[iv_idx]['sim_i']; ek = si[iv_idx]['sim_e']
+                    d['curtailKwh'] += si[iv_idx].get('curt', 0.0)
                 d['intervals'] += 1; d['lastTime'] = iv['time']
                 d['totalImport'] += ti; d['totalExport'] += ek
                 if 18 <= h < 19: d['hr18'] += ti
@@ -393,20 +609,17 @@ def calculate_costs(intervals, retailers):
                             d['export'] += ek * er2; d['shExportKwh'] += ek
                     else:
                         d['export'] += ek * r.get('off_fit', 0)
-                elif r['model'] == 'variable':
+                elif r['model'] in ('variable', 'variable_optimised'):
                     d['import'] += ti * (iv['aemo'] + r.get('sh_pk', 0))
                     d['export'] += ek * iv['aemo'] * r.get('off_fit', 0)
-                elif r['model'] == 'variable_optimised':
-                    sim = bat_sim[r['name']][date_str][iv_idx]
-                    d['import'] += sim['sim_i'] * (iv['aemo'] + r.get('sh_pk', 0))
-                    d['export'] += sim['sim_e'] * iv['aemo'] * r.get('off_fit', 0)
-                    d['curtailKwh'] += sim['curt']
     
     daily_summary = {}; chart_data = []; five_min_detail = {}
     
     for date_str in sorted(daily_data.keys()):
-        d0 = daily_data[date_str][retailers[0]['name']]
-        ds = {'totalImport': round(d0['totalImport'], 3), 'totalExport': round(d0['totalExport'], 3), 'retailers': {}}
+        day_ivs = iv_by_date[date_str]
+        measured_imp = sum(iv['i_kwh'] for iv in day_ivs)
+        measured_exp = sum(iv['e_kwh'] for iv in day_ivs)
+        ds = {'totalImport': round(measured_imp, 3), 'totalExport': round(measured_exp, 3), 'retailers': {}}
         cheapest_net = float('inf'); cheapest_name = ''
         for r in retailers:
             d = daily_data[date_str][r['name']]
@@ -450,11 +663,11 @@ def calculate_costs(intervals, retailers):
             outs = []; spu = 0; hr18 = hr19 = hr20 = 0.0; tik = tek = tic = tec = 0.0
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
-            sims = bat_sim.get(r['name'], {}).get(date_str)
+            sday = sims.get(r['name'], {}).get(date_str)
             for iv_idx, iv in enumerate(iv_by_date[date_str]):
                 h = iv['h']; i_kwh = iv['i_kwh']; e_kwh = iv['e_kwh']
-                if r['model'] == 'variable_optimised' and sims:
-                    i_kwh = sims[iv_idx]['sim_i']; e_kwh = sims[iv_idx]['sim_e']
+                if sday:
+                    i_kwh = sday[iv_idx]['sim_i']; e_kwh = sday[iv_idx]['sim_e']
                 if 18 <= h < 19: hr18 += i_kwh
                 elif 19 <= h < 20: hr19 += i_kwh
                 elif 20 <= h < 21: hr20 += i_kwh
@@ -505,9 +718,9 @@ def calculate_costs(intervals, retailers):
                 tic += ic; tec += ec
                 o = {'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
                      'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)}
-                if r['model'] == 'variable_optimised' and sims:
-                    o['soc'] = round(sims[iv_idx]['soc'], 2)
-                    o['curt'] = round(sims[iv_idx]['curt'], 3)
+                if sday:
+                    o['soc'] = round(sday[iv_idx]['soc'], 2)
+                    o['curt'] = round(sday[iv_idx]['curt'], 3)
                 outs.append(o)
             reb = 1.0 if (float(r.get('glo_rebate','0')) > 0 and hr18 < 0.1 and hr19 < 0.1 and hr20 < 0.1) else 0.0
             nt = round(tic - tec + r.get('dsc', 0) + r.get('sub', 0) - reb, 2)
@@ -791,6 +1004,10 @@ _PAGE_PREFIX = '''<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d0d0d;color:#ccc;font-family:monospace;font-size:13px;height:100vh;display:flex;flex-direction:column}
+.header{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#101010;border-bottom:1px solid #2a2a2a;flex-shrink:0}
+.header span{color:#888}
+.header label{display:flex;align-items:center;gap:6px;color:#888;cursor:pointer}
+#optStatus{color:#4CAF50}
 .subtabs{display:flex;background:#151515;border-bottom:1px solid #2a2a2a;flex-shrink:0}
 .subtabs button{padding:6px 14px;cursor:pointer;color:#666;font-family:monospace;border:none;background:none;border-bottom:2px solid transparent}
 .subtabs button:hover{color:#ccc;background:#1f1f1f}
@@ -812,6 +1029,28 @@ body{background:#0d0d0d;color:#ccc;font-family:monospace;font-size:13px;height:1
 .chart-legend span{cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid transparent}
 .chart-legend span.active{border-color:#4CAF50}
 </style></head><body>
+<div class=header>
+<span>Energy Retailer Comparison <span id=optStatus></span></span>
+<label title="Run every retailer with optimal battery dispatch for its own tariff (persistent)">
+<input type=checkbox id=optimiseAll onchange=toggleOptimise() style="accent-color:#4CAF50">
+Optimised battery for all retailers</label>
+</div>
+<script>
+function loadOptimise(){
+fetch('/api/settings').then(function(r){return r.json()}).then(function(s){
+var el=document.getElementById('optimiseAll');if(el)el.checked=!!s.optimise_all;
+var st=document.getElementById('optStatus');if(st)st.textContent=s.optimise_all?'(optimised)':'';
+});
+}
+function toggleOptimise(){
+var el=document.getElementById('optimiseAll');if(!el)return;
+el.disabled=true;
+fetch('/api/optimise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:el.checked})})
+.then(function(){location.reload()})
+.catch(function(){el.disabled=false});
+}
+loadOptimise();
+</script>
 '''
 
 _REPORTS_HTML = '''<div class=subtabs>
@@ -1037,6 +1276,8 @@ _CFG_FIELDS = [
     ('init_soc', 'Init SOC', False),
     ('chg_pct', 'Chg Pct', False),
     ('dis_pct', 'Dis Pct', False),
+    ('inv_cap', 'Inv Cap kW', False),
+    ('ac_cap', 'AC Cap kW', False),
 ]
 _HIDDEN = {'sensor_id'}
 
@@ -1222,6 +1463,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(rt)
         elif path == '/api/chart-data':
             self._json(cd)
+        elif path == '/api/settings':
+            self._json({'optimise_all': OPTIMISE_ALL})
         elif path == '/api/retailer-config':
             try:
                 raw = _read_config_raw(CONFIG_PATH)
@@ -1233,6 +1476,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({'error': 'Not found', 'paths': ['/','/api/status','/daily-report','/monthly-report','/seasonal-report','/5min-detail','/hourly-detail','/api/daily-data','/api/retailers','/api/chart-data','/api/retailer-config','/api/retailer-config/save']}, 404)
     
     def do_POST(self):
+        global OPTIMISE_ALL
         parsed = urlparse(self.path); path = parsed.path
         if path == '/api/retailer-config/save':
             content_len = int(self.headers.get('Content-Length', 0))
@@ -1252,6 +1496,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._html('<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/api/retailer-config?t=%d"></head><body>Saved. Redirecting...</body></html>' % int(time.time()*1000))
             except Exception as e:
                 log.error(f'Config save failed: {e}')
+                self._json({'error': str(e)}, 500)
+        elif path == '/api/optimise':
+            content_len = int(self.headers.get('Content-Length', 0))
+            body_raw = self.rfile.read(content_len) if content_len > 0 else b''
+            try:
+                on = json.loads(body_raw).get('on', not OPTIMISE_ALL)
+                save_settings({'optimise_all': bool(on)})
+                OPTIMISE_ALL = bool(on)
+                _cache['data_hash'] = ''
+                log.info(f'Optimise-all set to {bool(on)}, cache invalidated')
+                self._json({'optimise_all': bool(on)})
+            except Exception as e:
+                log.error(f'Optimise toggle failed: {e}')
                 self._json({'error': str(e)}, 500)
         else:
             self._json({'error': 'POST not supported on ' + path}, 404)
@@ -1276,7 +1533,7 @@ class Handler(BaseHTTPRequestHandler):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
-    global CSV_PATH, CONFIG_PATH, PORT, DAEMON
+    global CSV_PATH, CONFIG_PATH, SETTINGS_PATH, PORT, DAEMON
     i = 1
     while i < len(sys.argv):
         a = sys.argv[i]
@@ -1285,6 +1542,8 @@ def main():
         elif a == '--config' and i+1 < len(sys.argv): CONFIG_PATH = sys.argv[i+1]; i+=2
         elif a == '--daemon': DAEMON = True; i+=1
         else: print(f'Unknown: {a}'); return
+
+    SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(CONFIG_PATH)), 'settings.json')
     
     if DAEMON:
         pid = os.fork()

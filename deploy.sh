@@ -60,7 +60,7 @@ SEED_CODE=$(curl -s -m 10 -o /dev/null -w "%{http_code}" \
     -X POST "$SERVER_URL/api/retailer-config/save" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     --data-urlencode "rowCount=8" \
-    --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_fit2,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,pea_base,pea_override,glo_rebate,energymadeeasy_planid" \
+    --data-urlencode "headers=name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_fit2,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,pea_base,pea_override,glo_rebate,energymadeeasy_planid,bat_cap,bat_chg,bat_dis,bat_eff,soc_min,soc_max,init_soc,chg_pct,dis_pct,inv_cap,ac_cap" \
     --data-urlencode "name_1=FlowPower" \
     --data-urlencode "model_1=hybrid" \
     --data-urlencode "dsc_1=2.4047" \
@@ -245,5 +245,16 @@ SEED_CODE=$(curl -s -m 10 -o /dev/null -w "%{http_code}" \
     --data-urlencode "sub_8=0.8213" \
     --data-urlencode "sh_pk_8=0.0915" \
     --data-urlencode "off_fit_8=1.0" \
-    --data-urlencode "billing_day_8=4")
+    --data-urlencode "billing_day_8=4" \
+    --data-urlencode "bat_cap_8=41.92" \
+    --data-urlencode "bat_chg_8=11" \
+    --data-urlencode "bat_dis_8=10" \
+    --data-urlencode "bat_eff_8=0.9" \
+    --data-urlencode "soc_min_8=0.02" \
+    --data-urlencode "soc_max_8=1.0" \
+    --data-urlencode "init_soc_8=0.5" \
+    --data-urlencode "chg_pct_8=0.3" \
+    --data-urlencode "dis_pct_8=0.7" \
+    --data-urlencode "inv_cap_8=10" \
+    --data-urlencode "ac_cap_8=14.5")
 echo "Python server config seed: HTTP $SEED_CODE"
