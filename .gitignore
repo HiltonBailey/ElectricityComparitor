@@ -28,6 +28,7 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
+Temp/
 *.bak_acgap_*
 .tmp.driveupload/
 .tmp.drivedownload/
