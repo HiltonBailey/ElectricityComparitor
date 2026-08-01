@@ -260,12 +260,16 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
     for iv in intervals:
         by_date.setdefault(iv['date'], []).append(iv)
 
+    carry = bool(b.get('carry_soc', True))
+    start_soc = init_soc
     results = {}
     for date in sorted(by_date):
         day = by_date[date]
         n = len(day)
         bp_key = _billing_period_key(date, int(r.get('billing_day', 4)))
         pea = pea_by_period.get(bp_key, 0.0)
+        if r.get('model') == 'hybrid' and OPTIMISE_ALL:
+            pea = -0.05
         imp = [_imp_rate_at(r, iv, pea) for iv in day]
         exp = [_exp_rate_at(r, iv) for iv in day]
         load = [iv['load_kwh'] for iv in day]
@@ -273,7 +277,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         day_energy = sum(load) + sum(solar) + sum(iv['i_kwh'] + iv['e_kwh'] for iv in day)
         if day_energy < 0.01:
             results[date] = [{'sim_i': iv['i_kwh'], 'sim_e': iv['e_kwh'], 'curt': 0.0,
-                              'soc': init_soc, 'chg': 0.0, 'dis': 0.0} for iv in day]
+                              'soc': start_soc, 'chg': 0.0, 'dis': 0.0} for iv in day]
             continue
 
         deficit = [max(0.0, load[i] - solar[i]) for i in range(n)]
@@ -288,7 +292,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         exp_ok = all(day[i]['e_kwh'] <= 1e-9 or day[i]['e_kwh'] + day[i]['load_kwh'] <= inv_wh * 1.25 for i in range(n))
         if burst > max(dis_rate, chg_rate) * 1.2 or not exp_ok:
             results[date] = [{'sim_i': day[i]['i_kwh'], 'sim_e': day[i]['e_kwh'], 'curt': 0.0,
-                              'soc': init_soc, 'chg': 0.0, 'dis': 0.0} for i in range(n)]
+                              'soc': start_soc, 'chg': 0.0, 'dis': 0.0} for i in range(n)]
             continue
 
         # effective grid-buy rate for battery charging; an off-peak free allowance
@@ -308,10 +312,10 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
                 return 1.0
             return max(0.0, min(1.0, (soc_max - s) / max(1e-9, 0.1 * soc_max)))
 
-        soc = init_soc
+        soc = start_soc
         solar_chg = [0.0] * n
         cum_free = [0.0] * n
-        acc = init_soc - soc_min
+        acc = start_soc - soc_min
         for i in range(n):
             if surplus[i] > 0:
                 c = min(surplus[i], chg_rate * taper_rate(soc), (soc_max - soc) / eff)
@@ -322,15 +326,35 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         free_E = max(0.0, soc - soc_min)
 
         # ---- discharge uses (value-ordered): avoid imports, then earn feed-in ----
-        def build_uses(free_cap=True):
+        # Export uses respect the retailer's per-day super-peak export cap
+        # (sp_limit): the first sp_limit kWh in the sp window earn sp_fit, any
+        # remainder earns sp_fit2 (or pk_fit if the interval also falls in a pk
+        # feed-in window), matching _fixed_tou_interval exactly. sp_fit uses carry
+        # the remaining cap; once exhausted their allocation is capped at 0.
+        sp_cap = float(r.get('sp_limit', 0))
+
+        def _sp_overflow_rate(i):
+            er2 = float(r.get('sp_fit2', 0))
+            if in_window(day[i]['h'], r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)):
+                er2 = float(r.get('pk_fit', 0))
+            return er2
+
+        def _build_uses():
             uses = []
             for i in range(n):
                 if deficit[i] > 0:
-                    uses.append((imp[i], i, 'def'))
+                    uses.append((imp[i], i, 'def', False))
                 if exp[i] > 0:
-                    uses.append((exp[i], i, 'exp'))
+                    if exp[i] == float(r.get('sp_fit', 0)) and sp_cap > 0:
+                        uses.append((exp[i], i, 'exp', True))
+                        er2 = _sp_overflow_rate(i)
+                        if er2 > 0:
+                            uses.append((er2, i, 'exp', False))
+                    else:
+                        uses.append((exp[i], i, 'exp', False))
             uses.sort(key=lambda u: -u[0])
             return uses
+        uses = _build_uses()
 
         dis_def = [0.0] * n; dis_exp = [0.0] * n
         used_by = [0.0] * n
@@ -344,31 +368,81 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
                 used_by[j] += amt
 
         remaining = free_E
-        for val, i, typ in build_uses():
+        sp_used_free = 0.0
+        # Export floor: carried-over battery energy (SOC held since yesterday)
+        # may only be exported when the feed-in rate clears the round-trip
+        # refill cost (shoulder rate / eff). Today's solar surplus is free, so it
+        # may be exported at any positive FIT. This stops the sim from draining
+        # carried energy at 2c/10c when its replacement cost is 40c+; export-
+        # limited retailers carry their SOC forward instead (the overnight rule).
+        export_floor = float(r.get('sh_pk', 0)) / eff
+        carried_E = max(0.0, start_soc - soc_min)
+        solar_E = max(0.0, free_E - carried_E)
+        solar_rem = solar_E
+        for val, i, typ, is_sp in uses:
             if remaining <= 0:
                 break
             room = dis_rate - dis_def[i] - dis_exp[i]
             if room <= 0:
                 continue
-            ar = max(0.0, cum_free[i] - used_by[i])
+            # Uses are processed in value order, not time order, so a low-value
+            # use at hour 16 must not consume battery energy that a high-value
+            # use at hour 18 already reserved. Availability is the minimum slack
+            # over all times from i onward: you can never discharge at t more
+            # than the free energy accumulated by t.
+            ar = max(0.0, min(cum_free[t] - used_by[t] for t in range(i, n)))
+            sp_room = max(0.0, sp_cap - sp_used_free) if is_sp else 1e18
+            tk = min(room, remaining, ar, sp_room)
             if typ == 'def':
-                tk = min(deficit[i] - dis_def[i], room, remaining, ar)
-            else:
-                tk = min(room, remaining, ar)
+                tk = min(tk, max(0.0, deficit[i] - dis_def[i]))
+            if typ == 'exp' and val <= export_floor and not (is_sp and r.get('model') == 'hybrid'):
+                tk = min(tk, max(0.0, solar_rem))
             tk = max(0.0, tk)
             if tk <= 0:
                 continue
             alloc_free(i, typ, tk)
             remaining -= tk
+            if typ == 'exp' and val <= export_floor:
+                solar_rem -= tk
+            if is_sp:
+                sp_used_free += tk
 
         # ---- grid arbitrage: cheap/free window re-charges the battery and
         #      discharges it only into uses that clear the round-trip cost ----
         unmet = [max(0.0, deficit[i] - dis_def[i]) for i in range(n)]
-        # battery room available during the cheap window (after solar charging)
-        room_start = max(0.0, soc_max - init_soc)
+        # Solar-first: solar fills the battery first (free), so grid arbitrage
+        # may only buy the room solar alone cannot fill. This stops overnight
+        # grid charging from displacing the next day's solar into a 3c export.
+        solar_fill = max(0.0, soc - start_soc)
+        room_start = max(0.0, soc_max - start_soc - solar_fill)
         arb_charge_cap = min(chg_rate * sum(1 for i in range(n) if buy[i] <= cheap_rate + 1e-12),
                              room_start)
         grid_def = [0.0] * n; grid_exp = [0.0] * n
+        # Hybrid (FlowPower): solar-only charging. Grid arbitrage never clears the
+        # round-trip cost (flat 41.36c import vs 35c sp export), so the battery is
+        # charged solely from solar surplus and discharged into deficit coverage
+        # and sp-window exports. Winter has no solar surplus, so the battery cannot
+        # export (no bank) — FlowPower is not a usable retailer in winter.
+        if r.get('model') == 'hybrid':
+            grid_chg = [0.0] * n
+            out = []
+            soc2 = start_soc
+            for i, iv in enumerate(day):
+                chg_tot = solar_chg[i]
+                dis_tot = dis_def[i] + dis_exp[i]
+                net = load[i] - solar[i] + chg_tot - dis_tot
+                sim_i = max(0.0, net)
+                sim_e = max(0.0, -net)
+                exp_room = max(0.0, inv_wh - load[i])
+                curt = max(0.0, sim_e - exp_room)
+                sim_e = min(sim_e, exp_room)
+                soc2 = min(soc_max, max(soc_min, soc2 + chg_tot * eff - dis_tot))
+                out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt, 'soc': soc2,
+                            'chg': chg_tot, 'dis': dis_tot})
+            results[date] = out
+            if carry:
+                start_soc = soc2
+            continue
         budget = arb_charge_cap * eff
         cum_grid = [0.0] * n
         gacc = 0.0
@@ -377,7 +451,8 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
                 gacc += chg_rate
             cum_grid[i] = gacc
         used_grid = [0.0] * n
-        for val, i, typ in build_uses():
+        sp_used_grid = sp_used_free
+        for val, i, typ, is_sp in uses:
             if budget <= 0:
                 break
             if val <= cheap_rate / eff:
@@ -385,11 +460,12 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             room = dis_rate - dis_def[i] - dis_exp[i] - grid_def[i] - grid_exp[i]
             if room <= 0:
                 continue
-            ar = max(0.0, cum_grid[i] - used_grid[i])
+            ar = max(0.0, min(cum_grid[t] - used_grid[t] for t in range(i, n)))
+            sp_room = max(0.0, sp_cap - sp_used_grid) if is_sp else 1e18
             if typ == 'def':
-                tk = min(unmet[i] - grid_def[i], room, budget, ar)
+                tk = min(unmet[i] - grid_def[i], room, budget, ar, sp_room)
             else:
-                tk = min(room, budget, ar)
+                tk = min(room, budget, ar, sp_room)
             tk = max(0.0, tk)
             if tk <= 0:
                 continue
@@ -400,10 +476,12 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             budget -= tk
             for j in range(i, n):
                 used_grid[j] += tk
+            if is_sp:
+                sp_used_grid += tk
         grid_chg = [0.0] * n
         fund = (sum(grid_def) + sum(grid_exp)) / eff
         fund_rem = fund
-        soc_g = init_soc
+        soc_g = start_soc
         for i in range(n):
             soc_g = min(soc_max, soc_g + solar_chg[i] * eff)
             if buy[i] > cheap_rate + 1e-12:
@@ -418,6 +496,31 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             grid_chg[i] += tk
             soc_g += tk * eff
             fund_rem -= tk
+        # Export-limited retailers (sp_limit>0 or off_limit>0) carry their bank
+        # forward instead of exporting carried energy at a loss: hold back enough
+        # SOC to cover tomorrow morning's deficit before the cheap/off window,
+        # scaling down grid-funded exports if they would break that reserve. This
+        # keeps the sim's winter bank from draining to 2% and exporting at 10c.
+        export_limited = float(r.get('sp_limit', 0)) > 0 or float(r.get('off_limit', 0)) > 0
+        dates_all = sorted(by_date)
+        nidx = dates_all.index(date) + 1
+        nxt = by_date.get(dates_all[nidx]) if nidx < len(dates_all) else None
+        reserve = 0.0
+        if export_limited and nxt is not None:
+            off_s_h = float(r.get('off_s', 0) or 12)
+            if r.get('model') == 'hybrid':
+                off_s_h = 12.0
+            for iv in nxt:
+                if iv['h'] < min(off_s_h, 12):
+                    reserve += max(0.0, iv['load_kwh'] - iv['solar_kwh'])
+            reserve = min(reserve, soc_max - soc_min)
+        tot_chg = (sum(solar_chg) + sum(grid_chg)) * eff
+        tot_dis = sum(dis_def) + sum(dis_exp) + sum(grid_def) + sum(grid_exp)
+        end_soc = start_soc + tot_chg - tot_dis
+        shortfall = max(0.0, reserve - end_soc)
+        if shortfall > 0 and sum(grid_exp) > 1e-9:
+            scale = max(0.0, 1.0 - shortfall / sum(grid_exp))
+            grid_exp = [v * scale for v in grid_exp]
         g_total = sum(grid_chg)
         if fund > 0 and g_total < fund - 1e-9:
             fscale = g_total / fund
@@ -425,7 +528,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             grid_exp = [v * fscale for v in grid_exp]
 
         out = []
-        soc2 = init_soc
+        soc2 = start_soc
         for i, iv in enumerate(day):
             chg_tot = solar_chg[i] + grid_chg[i]
             dis_tot = dis_def[i] + dis_exp[i] + grid_def[i] + grid_exp[i]
@@ -439,6 +542,8 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt, 'soc': soc2,
                         'chg': chg_tot, 'dis': dis_tot})
         results[date] = out
+        if carry:
+            start_soc = soc2
     return results
 
 def _fixed_tou_interval(d, r, h, ti, ek):
