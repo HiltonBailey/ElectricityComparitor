@@ -662,62 +662,106 @@ def calculate_costs(intervals, retailers):
             if r['model'] == 'variable_optimised':
                 sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, _battery_spec(retailers))
 
-    daily_data = {}
-    for date_str, day_ivs in iv_by_date.items():
-        dd = {}
-        for r in retailers:
-            dd[r['name']] = {
-                'intervals': 0, 'lastTime': '', 'totalImport': 0.0, 'totalExport': 0.0,
-                'import': 0.0, 'export': 0.0, 'spExportUsed': 0.0,
-                'hr18': 0.0, 'hr19': 0.0, 'hr20': 0.0,
-                'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0,
-                'spExportKwh': 0.0, 'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0,
-                'curtailKwh': 0.0,
-            }
-        daily_data[date_str] = dd
-        sday = {r['name']: sims.get(r['name'], {}).get(date_str) for r in retailers}
-        for iv_idx, iv in enumerate(day_ivs):
-            h = iv['h']
+    def _accumulate(sims_dict):
+        adata = {}
+        for date_str, day_ivs in iv_by_date.items():
+            add = {}
             for r in retailers:
-                d = dd[r['name']]
-                si = sday[r['name']]
-                ti = iv['i_kwh']; ek = iv['e_kwh']
-                if si:
-                    ti = si[iv_idx]['sim_i']; ek = si[iv_idx]['sim_e']
-                    d['curtailKwh'] += si[iv_idx].get('curt', 0.0)
-                d['intervals'] += 1; d['lastTime'] = iv['time']
-                d['totalImport'] += ti; d['totalExport'] += ek
-                if 18 <= h < 19: d['hr18'] += ti
-                elif 19 <= h < 20: d['hr19'] += ti
-                elif 20 <= h < 21: d['hr20'] += ti
-                if r['model'] == 'fixed_tou':
-                    _fixed_tou_interval(d, r, h, ti, ek)
-                elif r['model'] == 'hybrid':
-                    bp = int(r.get('billing_day', 4))
-                    pk = _billing_period_key(date_str, bp)
-                    pea = pea_by_period.get(pk, 0.0)
-                    flow_rate = r.get('sh_pk', 0.2) + pea
-                    d['import'] += ti * flow_rate
-                    parts = iv['time'].split(':'); fh = int(parts[0]) + int(parts[1]) / 60.0
-                    sps = float(r.get('sp_fit_s', 17.5)); spe = float(r.get('sp_fit_e', 21.5))
-                    if sps <= fh < spe and r.get('sp_limit', 0) > 0:
-                        rem = r['sp_limit'] - d['spExportUsed']
-                        if rem > 0:
-                            sp = min(ek, rem); fb = ek - sp
-                            d['spExportUsed'] += sp; d['export'] += sp * r.get('sp_fit', 0)
-                            d['spExportKwh'] += sp
-                            if fb > 0:
+                add[r['name']] = {
+                    'intervals': 0, 'lastTime': '', 'totalImport': 0.0, 'totalExport': 0.0,
+                    'import': 0.0, 'export': 0.0, 'spExportUsed': 0.0,
+                    'hr18': 0.0, 'hr19': 0.0, 'hr20': 0.0,
+                    'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0,
+                    'spExportKwh': 0.0, 'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0,
+                    'curtailKwh': 0.0,
+                }
+            adata[date_str] = add
+            sday = {r['name']: sims_dict.get(r['name'], {}).get(date_str) for r in retailers}
+            for iv_idx, iv in enumerate(day_ivs):
+                h = iv['h']
+                for r in retailers:
+                    d = add[r['name']]
+                    si = sday[r['name']]
+                    ti = iv['i_kwh']; ek = iv['e_kwh']
+                    if si:
+                        ti = si[iv_idx]['sim_i']; ek = si[iv_idx]['sim_e']
+                        d['curtailKwh'] += si[iv_idx].get('curt', 0.0)
+                    d['intervals'] += 1; d['lastTime'] = iv['time']
+                    d['totalImport'] += ti; d['totalExport'] += ek
+                    if 18 <= h < 19: d['hr18'] += ti
+                    elif 19 <= h < 20: d['hr19'] += ti
+                    elif 20 <= h < 21: d['hr20'] += ti
+                    if r['model'] == 'fixed_tou':
+                        _fixed_tou_interval(d, r, h, ti, ek)
+                    elif r['model'] == 'hybrid':
+                        bp = int(r.get('billing_day', 4))
+                        pk = _billing_period_key(date_str, bp)
+                        pea = pea_by_period.get(pk, 0.0)
+                        flow_rate = r.get('sh_pk', 0.2) + pea
+                        d['import'] += ti * flow_rate
+                        parts = iv['time'].split(':'); fh = int(parts[0]) + int(parts[1]) / 60.0
+                        sps = float(r.get('sp_fit_s', 17.5)); spe = float(r.get('sp_fit_e', 21.5))
+                        if sps <= fh < spe and r.get('sp_limit', 0) > 0:
+                            rem = r['sp_limit'] - d['spExportUsed']
+                            if rem > 0:
+                                sp = min(ek, rem); fb = ek - sp
+                                d['spExportUsed'] += sp; d['export'] += sp * r.get('sp_fit', 0)
+                                d['spExportKwh'] += sp
+                                if fb > 0:
+                                    er2 = r.get('sp_fit2', 0)
+                                    d['export'] += fb * er2; d['shExportKwh'] += fb
+                            else:
                                 er2 = r.get('sp_fit2', 0)
-                                d['export'] += fb * er2; d['shExportKwh'] += fb
+                                d['export'] += ek * er2; d['shExportKwh'] += ek
                         else:
-                            er2 = r.get('sp_fit2', 0)
-                            d['export'] += ek * er2; d['shExportKwh'] += ek
-                    else:
-                        d['export'] += ek * r.get('off_fit', 0)
-                elif r['model'] in ('variable', 'variable_optimised'):
-                    d['import'] += ti * (iv['aemo'] + r.get('sh_pk', 0))
-                    d['export'] += ek * iv['aemo'] * r.get('off_fit', 0)
-    
+                            d['export'] += ek * r.get('off_fit', 0)
+                    elif r['model'] in ('variable', 'variable_optimised'):
+                        d['import'] += ti * (iv['aemo'] + r.get('sh_pk', 0))
+                        d['export'] += ek * iv['aemo'] * r.get('off_fit', 0)
+        return adata
+
+    daily_data = _accumulate(sims)
+
+    def _finalize(d, r, date_str):
+        if r['model'] == 'fixed_tou':
+            off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
+            off_rate = r.get('off_pk', 0)
+            if off_rate == 0 and r.get('off_limit', 0) > 0:
+                off_rate = r.get('sh_pk', 0)
+            da_imp = (off_bal * off_rate + d['shKwh'] * r.get('sh_pk', 0) +
+                      d['pkKwh'] * r.get('pk_pk', 0) + d['evKwh'] * r.get('ev_pk', 0))
+            da_exp = (d['spExportKwh'] * r.get('sp_fit', 0) + d['pkExportKwh'] * r.get('pk_fit', 0) +
+                      d['shExportKwh'] * r.get('sh_fit', 0) + d['offExportKwh'] * r.get('off_fit', 0))
+            d['import'] = da_imp; d['export'] = da_exp
+        elif r['model'] == 'hybrid':
+            bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
+            pea = pea_by_period.get(bp_key, 0.0)
+            eff_rate = float(r.get('sh_pk', 0.2)) + pea
+            d['import'] = d['totalImport'] * eff_rate
+
+        ri = round(d['import'], 2); re = round(d['export'], 2); rd = round(r.get('dsc', 0), 2)
+        rs = round(r.get('sub', 0), 2)
+        gr = r.get('glo_rebate', '0')
+        if float(gr) > 0 and d['hr18'] < 0.1 and d['hr19'] < 0.1 and d['hr20'] < 0.1:
+            reb = 1.00
+        else: reb = 0.0
+        d['gloRebate'] = reb; d['net'] = round(ri - re + rd + rs - reb, 2)
+
+    if OPTIMISE_ALL:
+        meas_data = _accumulate({})
+        used_meas = set()
+        for date_str in daily_data.keys():
+            for r in retailers:
+                d = daily_data[date_str][r['name']]
+                md = meas_data[date_str][r['name']]
+                _finalize(d, r, date_str)
+                _finalize(md, r, date_str)
+                if md['net'] < d['net']:
+                    daily_data[date_str][r['name']] = md
+                    used_meas.add((date_str, r['name']))
+    else:
+        used_meas = set()
+
     daily_summary = {}; chart_data = []; five_min_detail = {}
     
     for date_str in sorted(daily_data.keys()):
@@ -728,29 +772,11 @@ def calculate_costs(intervals, retailers):
         cheapest_net = float('inf'); cheapest_name = ''
         for r in retailers:
             d = daily_data[date_str][r['name']]
-            if r['model'] == 'fixed_tou':
-                off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
-                off_rate = r.get('off_pk', 0)
-                if off_rate == 0 and r.get('off_limit', 0) > 0:
-                    off_rate = r.get('sh_pk', 0)
-                da_imp = (off_bal * off_rate + d['shKwh'] * r.get('sh_pk', 0) +
-                          d['pkKwh'] * r.get('pk_pk', 0) + d['evKwh'] * r.get('ev_pk', 0))
-                da_exp = (d['spExportKwh'] * r.get('sp_fit', 0) + d['pkExportKwh'] * r.get('pk_fit', 0) +
-                          d['shExportKwh'] * r.get('sh_fit', 0) + d['offExportKwh'] * r.get('off_fit', 0))
-                d['import'] = da_imp; d['export'] = da_exp
-            elif r['model'] == 'hybrid':
-                bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
-                pea = pea_by_period.get(bp_key, 0.0)
-                eff_rate = float(r.get('sh_pk', 0.2)) + pea
-                d['import'] = d['totalImport'] * eff_rate
-            
-            ri = round(d['import'], 2); re = round(d['export'], 2); rd = round(r.get('dsc', 0), 2)
+            _finalize(d, r, date_str)
+
+            ri = d['import']; re = d['export']; rd = round(r.get('dsc', 0), 2)
             rs = round(r.get('sub', 0), 2)
-            gr = r.get('glo_rebate', '0')
-            if float(gr) > 0 and d['hr18'] < 0.1 and d['hr19'] < 0.1 and d['hr20'] < 0.1:
-                reb = 1.00
-            else: reb = 0.0
-            d['gloRebate'] = reb; d['net'] = round(ri - re + rd + rs - reb, 2)
+            reb = d['gloRebate']
             
             ds['retailers'][r['name']] = {'dsc': rd, 'sub': rs, 'import': ri, 'export': re, 'net': d['net'], 'gloRebate': reb,
                                           'curtail': round(d.get('curtailKwh', 0), 3)}
@@ -769,6 +795,8 @@ def calculate_costs(intervals, retailers):
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
             sday = sims.get(r['name'], {}).get(date_str)
+            if (date_str, r['name']) in used_meas:
+                sday = None
             for iv_idx, iv in enumerate(iv_by_date[date_str]):
                 h = iv['h']; i_kwh = iv['i_kwh']; e_kwh = iv['e_kwh']
                 if sday:

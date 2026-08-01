@@ -42,3 +42,6 @@ terminal_logs/
 
 # Large data files (>20MB)
 foxess_full_history.csv
+
+# Runtime state
+settings.json
