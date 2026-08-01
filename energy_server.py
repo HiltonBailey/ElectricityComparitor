@@ -768,7 +768,9 @@ def calculate_costs(intervals, retailers):
         day_ivs = iv_by_date[date_str]
         measured_imp = sum(iv['i_kwh'] for iv in day_ivs)
         measured_exp = sum(iv['e_kwh'] for iv in day_ivs)
-        ds = {'totalImport': round(measured_imp, 3), 'totalExport': round(measured_exp, 3), 'retailers': {}}
+        measured_solar = sum(iv.get('solar_kwh', 0.0) for iv in day_ivs)
+        ds = {'totalImport': round(measured_imp, 3), 'totalExport': round(measured_exp, 3),
+              'totalSolar': round(measured_solar, 3), 'retailers': {}}
         cheapest_net = float('inf'); cheapest_name = ''
         for r in retailers:
             d = daily_data[date_str][r['name']]
@@ -910,9 +912,11 @@ def monthly_report_html(daily_summary, retailers):
     for ds, d in sorted(daily_summary.items()):
         m = ds[:7]
         if m not in months:
-            months[m] = {'imp': 0, 'exp': 0, 'retailers': {}}
+            months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'days': 0, 'retailers': {}}
         months[m]['imp'] += d['totalImport']
         months[m]['exp'] += d['totalExport']
+        months[m]['solar'] += d.get('totalSolar', 0)
+        months[m]['days'] += 1
         for r in retailers:
             rn = r['name']
             v = d['retailers'].get(rn, {}).get('net', 0)
@@ -920,16 +924,21 @@ def monthly_report_html(daily_summary, retailers):
     html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">'
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Month</th>'
-    html += '<th style="padding:4px;text-align:right">Imp kWh</th><th style="padding:4px;text-align:right">Exp kWh</th>'
+    html += '<th style="padding:4px;text-align:right">Avg Imp kWh</th><th style="padding:4px;text-align:right">Avg Exp kWh</th>'
+    html += '<th style="padding:4px;text-align:right">Avg Solar/After-Exp kWh</th>'
     for r in retailers:
         html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
     for m in sorted(months.keys(), reverse=True):
         mm = months[m]
         cheapest = min(mm['retailers'], key=lambda rn: mm['retailers'][rn])
+        avg_imp = mm['imp'] / mm['days'] if mm['days'] else 0.0
+        avg_exp = mm['exp'] / mm['days'] if mm['days'] else 0.0
+        avg_sol = (mm['solar'] - mm['exp']) / mm['days'] if mm['days'] else 0.0
         html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1">{m}</td>'
-        html += f'<td style="padding:4px;text-align:right;color:#8cf">{mm["imp"]:.1f}</td>'
-        html += f'<td style="padding:4px;text-align:right;color:#fc8">{mm["exp"]:.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp:.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#fc8">{avg_exp:.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol:.1f}</td>'
         for r in retailers:
             v = mm['retailers'].get(r['name'], 0)
             c = '#4CAF50' if r['name'] == cheapest else '#ccc'
@@ -937,10 +946,16 @@ def monthly_report_html(daily_summary, retailers):
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
     t_imp = sum(mm['imp'] for mm in months.values())
     t_exp = sum(mm['exp'] for mm in months.values())
+    t_days = sum(mm['days'] for mm in months.values())
+    t_solar = sum(mm['solar'] for mm in months.values())
     t_ret = {r['name']: sum(mm['retailers'].get(r['name'], 0) for mm in months.values()) for r in retailers}
     t_cheapest = min(t_ret, key=lambda rn: t_ret[rn])
+    avg_imp_t = t_imp / t_days if t_days else 0.0
+    avg_exp_t = t_exp / t_days if t_days else 0.0
+    avg_sol_t = (t_solar - t_exp) / t_days if t_days else 0.0
     html += '<tr style="background:#222;font-weight:bold"><td style="padding:4px;text-align:left;color:#fff;position:sticky;left:0;background:#222;z-index:1">TOTAL</td>'
-    html += f'<td style="padding:4px;text-align:right;color:#8cf">{t_imp:.1f}</td><td style="padding:4px;text-align:right;color:#fc8">{t_exp:.1f}</td>'
+    html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp_t:.1f}</td><td style="padding:4px;text-align:right;color:#fc8">{avg_exp_t:.1f}</td>'
+    html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol_t:.1f}</td>'
     for r in retailers:
         v = t_ret.get(r['name'], 0)
         c = '#4CAF50' if r['name'] == t_cheapest else '#fff'
