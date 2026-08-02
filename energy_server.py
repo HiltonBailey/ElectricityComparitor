@@ -1218,9 +1218,6 @@ def monthly_report_html(daily_summary, retailers):
             rr = d['retailers'].get(rn, {})
             v = rr.get('net', 0)
             months[m]['retailers'][rn] = months[m]['retailers'].get(rn, 0) + v
-            months[m].setdefault('ret_import', {})[rn] = months[m].get('ret_import', {}).get(rn, 0) + rr.get('import', 0)
-            months[m].setdefault('ret_export', {})[rn] = months[m].get('ret_export', {}).get(rn, 0) + rr.get('export', 0)
-            months[m].setdefault('ret_dsc', {})[rn] = months[m].get('ret_dsc', {}).get(rn, 0) + rr.get('dsc', 0)
     has_est = False
     for m, mm in _estimate_months(daily_summary, retailers).items():
         mm['est'] = True; months[m] = mm; has_est = True
@@ -1262,13 +1259,6 @@ def monthly_report_html(daily_summary, retailers):
             v = mm['retailers'].get(rn, 0)
             c = '#4CAF50' if rn == cheapest else '#ccc'
             cell = f'<td style="padding:4px;text-align:right;color:{c};{estcls}">${v:.2f}'
-            ri = mm.get('ret_import', {}).get(rn)
-            re = mm.get('ret_export', {}).get(rn)
-            rk = mm.get('ret_dsc', {}).get(rn)
-            if ri is not None and mm.get('exp', 0) > 0:
-                net_eff = (re - ri - rk) / mm['exp'] * 100.0
-                ec = '#4CAF50' if net_eff >= 0 else '#f66'
-                cell += f'<br><span style="font-size:11px;color:{ec}">{net_eff:+.1f}c/kWh</span>'
             html += cell + '</td>'
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
     t_imp = sum(mm['imp'] for mm in months.values() if not mm.get('est'))
@@ -1327,9 +1317,6 @@ def seasonal_report_html(daily_summary, retailers):
             rr = d['retailers'].get(rn, {})
             v = rr.get('net', 0)
             seasons[label]['retailers'][rn] = seasons[label]['retailers'].get(rn, 0) + v
-            seasons[label].setdefault('ret_import', {})[rn] = seasons[label].get('ret_import', {}).get(rn, 0) + rr.get('import', 0)
-            seasons[label].setdefault('ret_export', {})[rn] = seasons[label].get('ret_export', {}).get(rn, 0) + rr.get('export', 0)
-            seasons[label].setdefault('ret_dsc', {})[rn] = seasons[label].get('ret_dsc', {}).get(rn, 0) + rr.get('dsc', 0)
     has_est = False
     for m, mm in _estimate_months(daily_summary, retailers).items():
         y = int(m[:4]); mo = int(m[5:7])
@@ -1362,13 +1349,6 @@ def seasonal_report_html(daily_summary, retailers):
             v = ss['retailers'].get(rn, 0)
             c = '#4CAF50' if rn == cheapest else '#ccc'
             cell = f'<td style="padding:4px;text-align:right;color:{c};{estcls}">${v:.2f}'
-            ri = ss.get('ret_import', {}).get(rn)
-            re = ss.get('ret_export', {}).get(rn)
-            rk = ss.get('ret_dsc', {}).get(rn)
-            if ri is not None and ss.get('exp', 0) > 0:
-                net_eff = (re - ri - rk) / ss['exp'] * 100.0
-                ec = '#4CAF50' if net_eff >= 0 else '#f66'
-                cell += f'<br><span style="font-size:11px;color:{ec}">{net_eff:+.1f}c/kWh</span>'
             html += cell + '</td>'
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
     t_imp = sum(ss['imp'] for ss in seasons.values() if not ss.get('est'))
