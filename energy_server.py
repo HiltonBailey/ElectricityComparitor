@@ -102,6 +102,14 @@ def in_window(h, s, e):
     if s <= e: return s <= h < e
     else: return h >= s or h < e
 
+def _cap_window(r):
+    """Window that carries the daily free kWh pool (off_limit). Uses free_s/free_e
+    if set, else off_s/off_e for backward compatibility."""
+    fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+    if fs or fe:
+        return fs, fe
+    return float(r.get('off_s', 0)), float(r.get('off_e', 0))
+
 def _imp_rate_at(r, iv, pea):
     """Retailer's marginal import $/kWh at an interval (for optimised dispatch ranking)."""
     h = iv['h']
@@ -110,6 +118,14 @@ def _imp_rate_at(r, iv, pea):
         return float(r.get('sh_pk', 0.2)) + pea
     if mdl == 'variable' or mdl == 'variable_optimised':
         return iv['aemo'] + float(r.get('sh_pk', 0))
+    if mdl == 'hybrid':
+        return float(r.get('sh_pk', 0.2)) + pea
+    if mdl == 'variable' or mdl == 'variable_optimised':
+        return iv['aemo'] + float(r.get('sh_pk', 0))
+    fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+    if (fs or fe) and float(r.get('off_limit', 0)) > 0:
+        if in_window(h, fs, fe):
+            return 0.0
     if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
         return r.get('off_pk', 0)
     if in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
@@ -152,6 +168,7 @@ def load_retailer_config(path):
         'dsc', 'sub', 'off_pk', 'sh_pk', 'pk_pk',
         'off_fit', 'sh_fit', 'pk_fit', 'sp_fit', 'sp_fit2', 'sp_limit',
         'off_s', 'off_e', 'pk_s', 'pk_e', 'sp_s', 'sp_e',
+        'free_s', 'free_e',
         'off_fit_s', 'off_fit_e', 'sh_fit_s', 'sh_fit_e',
         'pk_fit_s', 'pk_fit_e', 'sp_fit_s', 'sp_fit_e',
         'fixed_export', 'ev_s', 'ev_e', 'ev_pk', 'off_limit', 'billing_day',
@@ -547,30 +564,68 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
     return results
 
 def _fixed_tou_interval(d, r, h, ti, ek):
-    imp_rate = r.get('sh_pk', 0)
-    if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
-        imp_rate = r.get('off_pk', 0)
-        if r.get('off_limit', 0) > 0:
-            fu = d.get('freeUsage', 0)
-            if fu < r['off_limit']:
-                fp = min(ti, r['off_limit'] - fu)
-                d['freeUsage'] = fu + fp
-                bal = r.get('off_pk', 0)
-                if bal == 0:
-                    bal = r.get('sh_pk', 0)
-                d['import'] += (ti - fp) * bal
-                imp_rate = None
-            elif r.get('off_pk', 0) == 0:
-                imp_rate = r.get('sh_pk', 0)
-    elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
-        imp_rate = r.get('ev_pk', 0)
-    elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
-        imp_rate = r.get('pk_pk', 0)
-    if imp_rate is not None: d['import'] += ti * imp_rate
-    if in_window(h, r.get('off_s', 0), r.get('off_e', 0)): d['offKwh'] += ti
+    fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+    declared_free = bool(fs or fe)
+    if not declared_free:
+        off_limit = float(r.get('off_limit', 0))
+        imp_rate = r.get('sh_pk', 0)
+        if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
+            imp_rate = r.get('off_pk', 0)
+            if off_limit > 0:
+                fu = d.get('freeUsage', 0)
+                if fu < off_limit:
+                    fp = min(ti, off_limit - fu)
+                    d['freeUsage'] = fu + fp
+                    bal = r.get('off_pk', 0)
+                    if bal == 0: bal = r.get('sh_pk', 0)
+                    d['import'] += (ti - fp) * bal
+                    imp_rate = None
+                elif r.get('off_pk', 0) == 0:
+                    imp_rate = r.get('sh_pk', 0)
+        elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
+            imp_rate = r.get('ev_pk', 0)
+        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
+            imp_rate = r.get('pk_pk', 0)
+        if imp_rate is not None: d['import'] += ti * imp_rate
+        if in_window(h, r.get('off_s', 0), r.get('off_e', 0)): d['offKwh'] += ti
+        elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0: d['evKwh'] += ti
+        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): d['pkKwh'] += ti
+        else: d['shKwh'] += ti
+        _fixed_tou_export(d, r, h, ek)
+        return
+    # Decoupled free-cap window (free_s/free_e declared): bill rate windows
+    # normally, and treat up to off_limit kWh/day inside the free window at $0,
+    # with any over-cap charged at the shoulder fallback rate.
+    cap_s, cap_e = _cap_window(r)
+    in_cap = in_window(h, cap_s, cap_e)
+    off_limit = float(r.get('off_limit', 0))
+    if in_cap and off_limit > 0:
+        fu = d.get('freeUsage', 0)
+        if fu < off_limit:
+            fp = min(ti, off_limit - fu)
+            d['freeUsage'] = fu + fp
+            d['import'] += (ti - fp) * r.get('sh_pk', 0)
+        else:
+            d['import'] += ti * r.get('sh_pk', 0)
+    else:
+        imp_rate = r.get('sh_pk', 0)
+        if in_window(h, r.get('off_s', 0), r.get('off_e', 0)):
+            off_rate = r.get('off_pk', 0)
+            imp_rate = off_rate if off_rate else r.get('sh_pk', 0)
+        elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0:
+            imp_rate = r.get('ev_pk', 0)
+        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
+            imp_rate = r.get('pk_pk', 0)
+        d['import'] += ti * imp_rate
+    if in_cap and off_limit > 0:
+        pass
+    elif in_window(h, r.get('off_s', 0), r.get('off_e', 0)): d['offKwh'] += ti
     elif in_window(h, r.get('ev_s', 0), r.get('ev_e', 0)) and r.get('ev_pk', 0) > 0: d['evKwh'] += ti
     elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): d['pkKwh'] += ti
     else: d['shKwh'] += ti
+    _fixed_tou_export(d, r, h, ek)
+
+def _fixed_tou_export(d, r, h, ek):
     if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)) and r.get('sp_limit', 0) > 0:
         rem = r['sp_limit'] - d['spExportUsed']
         if rem > 0:
@@ -724,15 +779,18 @@ def calculate_costs(intervals, retailers):
 
     def _finalize(d, r, date_str):
         if r['model'] == 'fixed_tou':
-            off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
-            off_rate = r.get('off_pk', 0)
-            if off_rate == 0 and r.get('off_limit', 0) > 0:
-                off_rate = r.get('sh_pk', 0)
-            da_imp = (off_bal * off_rate + d['shKwh'] * r.get('sh_pk', 0) +
-                      d['pkKwh'] * r.get('pk_pk', 0) + d['evKwh'] * r.get('ev_pk', 0))
+            fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+            if not (fs or fe):
+                off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
+                off_rate = r.get('off_pk', 0)
+                if off_rate == 0 and r.get('off_limit', 0) > 0:
+                    off_rate = r.get('sh_pk', 0)
+                da_imp = (off_bal * off_rate + d['shKwh'] * r.get('sh_pk', 0) +
+                          d['pkKwh'] * r.get('pk_pk', 0) + d['evKwh'] * r.get('ev_pk', 0))
+                d['import'] = da_imp
             da_exp = (d['spExportKwh'] * r.get('sp_fit', 0) + d['pkExportKwh'] * r.get('pk_fit', 0) +
                       d['shExportKwh'] * r.get('sh_fit', 0) + d['offExportKwh'] * r.get('off_fit', 0))
-            d['import'] = da_imp; d['export'] = da_exp
+            d['export'] = da_exp
         elif r['model'] == 'hybrid':
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
@@ -1669,6 +1727,8 @@ _CFG_FIELDS = [
     ('off_e', 'OffPk End', False),
     ('pk_s', 'Peak Start', False),
     ('pk_e', 'Peak End', False),
+    ('free_s', 'Free Start', False),
+    ('free_e', 'Free End', False),
     ('sp_s', 'SP Start', False),
     ('sp_e', 'SP End', False),
     ('off_fit_s', 'OffPk FIT Start', False),
