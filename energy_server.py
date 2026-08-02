@@ -1001,13 +1001,15 @@ def _estimate_months(daily_summary, retailers):
         est_solar = _PVGIS_TERRIGAL[mo] * pvgis_factor(mo)
         est_imp = a['imp'] + (b['imp'] - a['imp']) * t
         est_exp = a['exp'] + (b['exp'] - a['exp']) * t
+        est_load = a['load'] + (b['load'] - a['load']) * t
         days = calendar.monthrange(y, mo)[1]
         ret = {}
         for rn in rnames:
             ret[rn] = (a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t) * days
         mk = f"{y:04d}-{mo:02d}"
         est[mk] = {'imp': est_imp * days, 'exp': est_exp * days,
-                   'solar': est_solar * days, 'days': days, 'retailers': ret}
+                   'solar': est_solar * days, 'load': est_load * days,
+                   'days': days, 'retailers': ret}
     return est
 
 def monthly_report_html(daily_summary, retailers):
@@ -1015,10 +1017,11 @@ def monthly_report_html(daily_summary, retailers):
     for ds, d in sorted(daily_summary.items()):
         m = ds[:7]
         if m not in months:
-            months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'days': 0, 'retailers': {}, 'est': False}
+            months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'load': 0, 'days': 0, 'retailers': {}, 'est': False}
         months[m]['imp'] += d['totalImport']
         months[m]['exp'] += d['totalExport']
         months[m]['solar'] += d.get('totalSolar', 0)
+        months[m]['load'] += d.get('totalLoad', 0)
         months[m]['days'] += 1
         for r in retailers:
             rn = r['name']
@@ -1031,7 +1034,7 @@ def monthly_report_html(daily_summary, retailers):
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Month</th>'
     html += '<th style="padding:4px;text-align:right">Avg Imp kWh</th><th style="padding:4px;text-align:right">Avg Exp kWh</th>'
-    html += '<th style="padding:4px;text-align:right">Avg Solar kWh</th>'
+    html += '<th style="padding:4px;text-align:right">Avg Solar kWh</th><th style="padding:4px;text-align:right">Avg Load kWh</th>'
     for r in retailers:
         html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
@@ -1041,6 +1044,7 @@ def monthly_report_html(daily_summary, retailers):
         avg_imp = mm['imp'] / mm['days'] if mm['days'] else 0.0
         avg_exp = mm['exp'] / mm['days'] if mm['days'] else 0.0
         avg_sol = mm['solar'] / mm['days'] if mm['days'] else 0.0
+        avg_load = mm['load'] / mm['days'] if mm['days'] else 0.0
         if mm.get('est'):
             rowbg = '#0d1420'; mlbl = f'~{m}'; mcol = '#5b7fbf'; estcls = 'font-style:italic'
             labcol = '#7b8ea8'
@@ -1050,6 +1054,7 @@ def monthly_report_html(daily_summary, retailers):
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{avg_exp:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol:.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#caa">{avg_load:.1f}</td>'
         for r in retailers:
             v = mm['retailers'].get(r['name'], 0)
             c = '#4CAF50' if r['name'] == cheapest else '#ccc'
@@ -1059,14 +1064,16 @@ def monthly_report_html(daily_summary, retailers):
     t_exp = sum(mm['exp'] for mm in months.values() if not mm.get('est'))
     t_days = sum(mm['days'] for mm in months.values() if not mm.get('est'))
     t_solar = sum(mm['solar'] for mm in months.values() if not mm.get('est'))
+    t_load = sum(mm['load'] for mm in months.values() if not mm.get('est'))
     t_ret = {r['name']: sum(mm['retailers'].get(r['name'], 0) for mm in months.values() if not mm.get('est')) for r in retailers}
     t_cheapest = min(t_ret, key=lambda rn: t_ret[rn])
     avg_imp_t = t_imp / t_days if t_days else 0.0
     avg_exp_t = t_exp / t_days if t_days else 0.0
     avg_sol_t = t_solar / t_days if t_days else 0.0
+    avg_load_t = t_load / t_days if t_days else 0.0
     html += '<tr style="background:#222;font-weight:bold"><td style="padding:4px;text-align:left;color:#fff;position:sticky;left:0;background:#222;z-index:1">TOTAL</td>'
     html += f'<td style="padding:4px;text-align:right;color:#8cf">{avg_imp_t:.1f}</td><td style="padding:4px;text-align:right;color:#fc8">{avg_exp_t:.1f}</td>'
-    html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol_t:.1f}</td>'
+    html += f'<td style="padding:4px;text-align:right;color:#9c9">{avg_sol_t:.1f}</td><td style="padding:4px;text-align:right;color:#caa">{avg_load_t:.1f}</td>'
     for r in retailers:
         v = t_ret.get(r['name'], 0)
         c = '#4CAF50' if r['name'] == t_cheapest else '#fff'
