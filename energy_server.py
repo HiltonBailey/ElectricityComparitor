@@ -982,13 +982,56 @@ def _forecast_state(daily_summary, retailers):
     span = (nxt - last_m) % 12
     if span == 0: span = 12
 
+    # Fit each forecast flow (imp/exp/net per retailer) to (solar, load) using
+    # the observed months. This keeps forecast import/export/cost consistent
+    # with the month's solar & load forecast, instead of interpolating each
+    # by calendar month (which overstated import in a high-solar month).
+    def _lsq_fit(xs, ys):
+        M = [[0.0] * 3 for _ in range(3)]; b = [0.0, 0, 0]
+        for x, y in zip(xs, ys):
+            s, l = x[0], x[1]
+            M[0][0] += s * s; M[0][1] += s * l; M[0][2] += s
+            M[1][0] += l * s; M[1][1] += l * l; M[1][2] += l
+            M[2][0] += s;     M[2][1] += l;     M[2][2] += 1
+            b[0] += s * y; b[1] += l * y; b[2] += y
+        def det(m):
+            return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        D = det(M)
+        return [det([[M[j][0] if k != 0 else b[j], M[j][1] if k != 1 else b[j], M[j][2] if k != 2 else b[j]] for j in range(3)]) / D
+                for k in range(3)]
+
+    obs_fit_rows = []
+    for m, om in obs.items():
+        if om['days'] >= 20:
+            obs_fit_rows.append(om)
+    coef = {'imp': None, 'exp': None, 'ret': {}}
+    if len(obs_fit_rows) >= 3:
+        xs = [[om['solar'] / om['days'], om['load'] / om['days']] for om in obs_fit_rows]
+        coef['imp'] = _lsq_fit(xs, [om['imp'] / om['days'] for om in obs_fit_rows])
+        coef['exp'] = _lsq_fit(xs, [om['exp'] / om['days'] for om in obs_fit_rows])
+        for rn in rnames:
+            coef['ret'][rn] = _lsq_fit(xs, [om['ret'][rn] / om['days'] for om in obs_fit_rows])
+
+    def _apply(co, solar, load):
+        return co[0] * solar + co[1] * load + co[2]
+
     def forecast_daily(y, mo):
         t = (mo - last_m) % 12 / span
-        return {'imp': a['imp'] + (b['imp'] - a['imp']) * t,
-                'exp': a['exp'] + (b['exp'] - a['exp']) * t,
-                'load': a['load'] + (b['load'] - a['load']) * t,
-                'solar': _PVGIS_TERRIGAL[mo] * pvgis_factor(mo),
-                'ret': {rn: a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t for rn in rnames}}
+        fd = {}
+        fd['solar'] = _PVGIS_TERRIGAL[mo] * pvgis_factor(mo)
+        sun, ld = fd['solar'], a['load'] + (b['load'] - a['load']) * t
+        fd['load'] = ld
+        if coef['imp'] is not None:
+            fd['imp'] = max(0.0, _apply(coef['imp'], sun, ld))
+            fd['exp'] = max(0.0, _apply(coef['exp'], sun, ld))
+            fd['ret'] = {rn: _apply(coef['ret'][rn], sun, ld) for rn in rnames}
+        else:
+            fd['imp'] = a['imp'] + (b['imp'] - a['imp']) * t
+            fd['exp'] = a['exp'] + (b['exp'] - a['exp']) * t
+            fd['ret'] = {rn: a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t for rn in rnames}
+        return fd
 
     return {'obs': obs, 'rnames': rnames, 'forecast_daily': forecast_daily,
             'last_y': last_y, 'last_m': last_m, 'obs_months': obs_months}
