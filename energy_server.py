@@ -1061,15 +1061,55 @@ def _project_current_month(daily_summary, retailers):
     if st['obs'].get(cm, {}).get('days', 0) >= total_days:
         return None
 
+    # Fix #1: anchor the remainder on the trailing trend (prior full month's
+    # daily rate), blended with the current month's observed-so-far daily
+    # rate. The blend weights toward real data as the month fills in, so a
+    # single noisy early day no longer dominates the whole-month projection.
+    def month_daily(key):
+        om = st['obs'].get(key)
+        if not om or not om['days']:
+            return None
+        md = {rk: om[rk] / om['days'] for rk in ('imp', 'exp', 'solar', 'load')}
+        md['ret'] = {rn: om['ret'][rn] / om['days'] for rn in rnames}
+        return md
+
+    prev_key = f"{cy:04d}-{cmo - 1:02d}" if cmo > 1 else f"{cy - 1:04d}-{12:02d}"
+    prev_daily = month_daily(prev_key)
+    if prev_daily is None:
+        for pk in sorted(st['obs']):
+            if pk < cm:
+                prev_daily = month_daily(pk); break
+
     fd = st['forecast_daily'](cy, cmo)
+    fallback = fd  # seasonal/PVGIS interpolated daily
+    w = done_days / total_days if total_days else 0.0
+
+    def blend_rate(obs_val, prior):
+        # prior=trailing-trend daily, obs_val=current observed daily (or None)
+        if obs_val is None:
+            return prior
+        return w * obs_val + (1 - w) * prior
+
+    daily = {}
+    if prev_daily is not None:
+        for rk in ('imp', 'exp', 'solar', 'load'):
+            daily[rk] = blend_rate(done[rk] / done_days if done_days else None, prev_daily.get(rk, fd[rk]))
+        daily['ret'] = {}
+        for rn in rnames:
+            obs_rate = done_ret[rn] / done_days if done_days else None
+            daily['ret'][rn] = blend_rate(obs_rate, prev_daily['ret'].get(rn, fd['ret'][rn]))
+    else:
+        daily = fd
+        daily = {**fd, 'ret': {rn: fd['ret'][rn] for rn in rnames}}
+
     remaining = total_days - done_days
     mm = {
-        'imp': done['imp'] + fd['imp'] * remaining,
-        'exp': done['exp'] + fd['exp'] * remaining,
-        'solar': done['solar'] + fd['solar'] * remaining,
-        'load': done['load'] + fd['load'] * remaining,
+        'imp': done['imp'] + daily['imp'] * remaining,
+        'exp': done['exp'] + daily['exp'] * remaining,
+        'solar': done['solar'] + daily['solar'] * remaining,
+        'load': done['load'] + daily['load'] * remaining,
         'days': total_days,
-        'retailers': {rn: done_ret[rn] + fd['ret'][rn] * remaining for rn in rnames},
+        'retailers': {rn: done_ret[rn] + daily['ret'][rn] * remaining for rn in rnames},
         'proj': True,
     }
     return cm, mm
