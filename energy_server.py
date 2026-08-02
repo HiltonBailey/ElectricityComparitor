@@ -913,18 +913,9 @@ _PVGIS_TERRIGAL = {1: 4.71, 2: 4.24, 3: 3.58, 4: 2.91, 5: 2.28, 6: 1.78,
                    7: 2.14, 8: 2.95, 9: 3.84, 10: 4.42, 11: 4.86, 12: 5.04}
 _EST_MONTHS_AHEAD = 4
 
-def _estimate_months(daily_summary, retailers):
-    """Guestimate values for months after the last observed month.
-
-    Solar: PVGIS expected production for Terrigal, scaled by the factor the
-    user's system achieves relative to the area average (per season). Other
-    flows (imp/exp/load) and retailer nets are linearly interpolated between
-    the last observed month and the next observed month around the annual
-    cycle. Returns {month_key: {'imp','exp','solar','days','retailers',}}.
-    Returns {} when no estimates are needed.
-    """
+def _forecast_state(daily_summary, retailers):
     if not daily_summary:
-        return {}
+        return None
     rnames = [r['name'] for r in retailers]
     obs = {}
     for ds, d in daily_summary.items():
@@ -940,8 +931,6 @@ def _estimate_months(daily_summary, retailers):
         om['days'] += 1
         for rn in rnames:
             om['ret'][rn] += d['retailers'].get(rn, {}).get('net', 0)
-    last = sorted(obs.keys())[-1]
-    last_y, last_m = int(last[:4]), int(last[5:7])
 
     def daily(key):
         om = obs.get(key)
@@ -951,7 +940,6 @@ def _estimate_months(daily_summary, retailers):
                 'solar': om['solar'] / om['days'], 'load': om['load'] / om['days'],
                 'ret': {rn: om['ret'][rn] / om['days'] for rn in rnames}}
 
-    # Seasonal PVGIS factor the system actually achieves (obs solar / PVGIS)
     season_f = {'summer': [], 'autumn': [], 'winter': [], 'spring': []}
     def season_of(mo):
         if mo in (12, 1, 2): return 'summer'
@@ -976,8 +964,9 @@ def _estimate_months(daily_summary, retailers):
             return wf + (sf - wf) * frac
         return sf if sf is not None else (wf if wf is not None else 10.0)
 
-    # Interpolation anchors: last observed month and the next observed around cycle
     obs_months = sorted(int(m[5:7]) for m in obs)
+    last = sorted(obs.keys())[-1]
+    last_y, last_m = int(last[:4]), int(last[5:7])
     nxt = next((mo for mo in obs_months if mo > last_m), None)
     if nxt is None:
         nxt = obs_months[0]
@@ -989,10 +978,36 @@ def _estimate_months(daily_summary, retailers):
         b_key = f"{last_y + 1:04d}-{nxt:02d}"
     a = daily(a_key); b = daily(b_key)
     if a is None or b is None:
-        return {}
+        return None
     span = (nxt - last_m) % 12
     if span == 0: span = 12
 
+    def forecast_daily(y, mo):
+        t = (mo - last_m) % 12 / span
+        return {'imp': a['imp'] + (b['imp'] - a['imp']) * t,
+                'exp': a['exp'] + (b['exp'] - a['exp']) * t,
+                'load': a['load'] + (b['load'] - a['load']) * t,
+                'solar': _PVGIS_TERRIGAL[mo] * pvgis_factor(mo),
+                'ret': {rn: a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t for rn in rnames}}
+
+    return {'obs': obs, 'rnames': rnames, 'forecast_daily': forecast_daily,
+            'last_y': last_y, 'last_m': last_m, 'obs_months': obs_months}
+
+def _estimate_months(daily_summary, retailers):
+    """Guestimate values for months after the last observed month.
+
+    Solar: PVGIS expected production for Terrigal, scaled by the factor the
+    user's system achieves relative to the area average (per season). Other
+    flows (imp/exp/load) and retailer nets are linearly interpolated between
+    the last observed month and the next observed month around the annual
+    cycle. Returns {month_key: {'imp','exp','solar','days','retailers',}}.
+    Returns {} when no estimates are needed.
+    """
+    st = _forecast_state(daily_summary, retailers)
+    if st is None:
+        return {}
+    rnames = st['rnames']; forecast_daily = st['forecast_daily']
+    last_y, last_m = st['last_y'], st['last_m']
     est = {}
     y, mo = last_y, last_m
     import calendar
@@ -1000,20 +1015,64 @@ def _estimate_months(daily_summary, retailers):
         mo += 1
         if mo > 12:
             mo = 1; y += 1
-        t = (mo - last_m) % 12 / span
-        est_solar = _PVGIS_TERRIGAL[mo] * pvgis_factor(mo)
-        est_imp = a['imp'] + (b['imp'] - a['imp']) * t
-        est_exp = a['exp'] + (b['exp'] - a['exp']) * t
-        est_load = a['load'] + (b['load'] - a['load']) * t
+        fd = forecast_daily(y, mo)
         days = calendar.monthrange(y, mo)[1]
-        ret = {}
-        for rn in rnames:
-            ret[rn] = (a['ret'][rn] + (b['ret'][rn] - a['ret'][rn]) * t) * days
+        ret = {rn: fd['ret'][rn] * days for rn in rnames}
         mk = f"{y:04d}-{mo:02d}"
-        est[mk] = {'imp': est_imp * days, 'exp': est_exp * days,
-                   'solar': est_solar * days, 'load': est_load * days,
+        est[mk] = {'imp': fd['imp'] * days, 'exp': fd['exp'] * days,
+                   'solar': fd['solar'] * days, 'load': fd['load'] * days,
                    'days': days, 'retailers': ret}
     return est
+
+def _project_current_month(daily_summary, retailers):
+    """Project the current (partially completed) month to month-end.
+
+    Combines actual-to-date (complete days) with the forecast for the
+    remaining days of the month. Returns None if the month is already fully
+    observed. The returned dict matches the monthly-report row shape and is
+    flagged 'proj', with 'days' = the whole month so avreadign reflects a
+    full month.
+    """
+    import calendar
+    if not daily_summary:
+        return None
+    st = _forecast_state(daily_summary, retailers)
+    if st is None:
+        return None
+    rnames = st['rnames']
+    cur = sorted(daily_summary.keys())[-1]        # latest date's key
+    cm = cur[:7]
+    cy, cmo = int(cm[:4]), int(cm[5:7])
+    total_days = calendar.monthrange(cy, cmo)[1]
+
+    done = {rk: 0.0 for rk in ('imp', 'exp', 'solar', 'load')}
+    done_ret = {rn: 0.0 for rn in rnames}
+    done_days = 0
+    for ds, d in daily_summary.items():
+        if ds[:7] != cm or not d.get('complete', True):
+            continue
+        done['imp'] += d['totalImport']; done['exp'] += d['totalExport']
+        done['solar'] += d.get('totalSolar', 0); done['load'] += d.get('totalLoad', 0)
+        done_days += 1
+        for rn in rnames:
+            done_ret[rn] += d['retailers'].get(rn, {}).get('net', 0)
+
+    # If we already have every day, no projection needed
+    if st['obs'].get(cm, {}).get('days', 0) >= total_days:
+        return None
+
+    fd = st['forecast_daily'](cy, cmo)
+    remaining = total_days - done_days
+    mm = {
+        'imp': done['imp'] + fd['imp'] * remaining,
+        'exp': done['exp'] + fd['exp'] * remaining,
+        'solar': done['solar'] + fd['solar'] * remaining,
+        'load': done['load'] + fd['load'] * remaining,
+        'days': total_days,
+        'retailers': {rn: done_ret[rn] + fd['ret'][rn] * remaining for rn in rnames},
+        'proj': True,
+    }
+    return cm, mm
 
 def monthly_report_html(daily_summary, retailers):
     months = {}
@@ -1035,6 +1094,10 @@ def monthly_report_html(daily_summary, retailers):
     has_est = False
     for m, mm in _estimate_months(daily_summary, retailers).items():
         mm['est'] = True; months[m] = mm; has_est = True
+    proj = _project_current_month(daily_summary, retailers)
+    if proj:
+        pm, pmm = proj
+        pmm['est'] = True; months[pm] = pmm; has_est = True
     html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">'
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Month</th>'
@@ -1051,8 +1114,12 @@ def monthly_report_html(daily_summary, retailers):
         avg_sol = mm['solar'] / mm['days'] if mm['days'] else 0.0
         avg_load = mm['load'] / mm['days'] if mm['days'] else 0.0
         if mm.get('est'):
-            rowbg = '#0d1420'; mlbl = f'~{m}'; mcol = '#5b7fbf'; estcls = 'font-style:italic'
+            rowbg = '#0d1420'; estcls = 'font-style:italic'
             labcol = '#7b8ea8'
+            if mm.get('proj'):
+                mlbl = f'{m} (proj)'; mcol = '#8ca8d8'
+            else:
+                mlbl = f'~{m}'; mcol = '#5b7fbf'
         else:
             rowbg = '#111'; mlbl = m; mcol = '#aaa'; estcls = ''; labcol = '#aaa'
         html += f'<tr style="background:{rowbg}"><td style="padding:4px;text-align:left;color:{labcol};{estcls};position:sticky;left:0;background:{rowbg};z-index:1">{mlbl}</td>'
@@ -1088,7 +1155,8 @@ def monthly_report_html(daily_summary, retailers):
     if has_est:
         html += ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:6px 4px">'
                  'Rows prefixed with ~ are guestimates (PVGIS solar expectations calibrated to '
-                 'your system + seasonal load averages). They drop off automatically once actuals arrive.</div>')
+                 'your system + seasonal load averages). They drop off automatically once actuals arrive. '
+                 'Rows marked (proj) project the current month to month-end from actuals-to-date + expected remainder.</div>')
     return html
 
 _SEASONS = [('Summer', [12, 1, 2]), ('Autumn', [3, 4, 5]), ('Winter', [6, 7, 8]), ('Spring', [9, 10, 11])]
