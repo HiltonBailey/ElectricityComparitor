@@ -312,12 +312,13 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
                               'soc': start_soc, 'chg': 0.0, 'dis': 0.0} for i in range(n)]
             continue
 
-        # effective grid-buy rate for battery charging; an off-peak free allowance
-        # (off_limit) makes the off window cost zero up to the daily pool
+        # effective grid-buy rate for battery charging; the daily free allowance
+        # (off_limit) makes the cap window cost zero up to the pool
         buy = list(imp)
         if off_limit > 0:
+            cap_s, cap_e = _cap_window(r)
             for i in range(n):
-                if in_window(day[i]['h'], r.get('off_s', 0), r.get('off_e', 0)):
+                if in_window(day[i]['h'], cap_s, cap_e):
                     buy[i] = 0.0
         cheap_rate = min(buy) if buy else 0.0
 
