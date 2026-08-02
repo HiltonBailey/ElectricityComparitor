@@ -770,8 +770,9 @@ def calculate_costs(intervals, retailers):
         measured_exp = sum(iv['e_kwh'] for iv in day_ivs)
         measured_solar = sum(iv.get('solar_kwh', 0.0) for iv in day_ivs)
         measured_load = sum(iv.get('load_kwh', 0.0) for iv in day_ivs)
+        complete = len(day_ivs) >= 288
         ds = {'totalImport': round(measured_imp, 3), 'totalExport': round(measured_exp, 3),
-              'totalSolar': round(measured_solar, 3), 'totalLoad': round(measured_load, 3), 'retailers': {}}
+              'totalSolar': round(measured_solar, 3), 'totalLoad': round(measured_load, 3), 'complete': complete, 'retailers': {}}
         cheapest_net = float('inf'); cheapest_name = ''
         for r in retailers:
             d = daily_data[date_str][r['name']]
@@ -927,6 +928,8 @@ def _estimate_months(daily_summary, retailers):
     rnames = [r['name'] for r in retailers]
     obs = {}
     for ds, d in daily_summary.items():
+        if not d.get('complete', True):
+            continue
         m = ds[:7]
         if m not in obs:
             obs[m] = {'imp': 0.0, 'exp': 0.0, 'solar': 0.0, 'load': 0.0, 'days': 0,
@@ -1018,6 +1021,8 @@ def monthly_report_html(daily_summary, retailers):
         m = ds[:7]
         if m not in months:
             months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'load': 0, 'days': 0, 'retailers': {}, 'est': False}
+        if not d.get('complete', True):
+            continue
         months[m]['imp'] += d['totalImport']
         months[m]['exp'] += d['totalExport']
         months[m]['solar'] += d.get('totalSolar', 0)
@@ -1106,6 +1111,8 @@ def seasonal_report_html(daily_summary, retailers):
         label = _season_label(y, mo)
         if label not in seasons:
             seasons[label] = {'imp': 0, 'exp': 0, 'retailers': {}, 'est': False}
+        if not d.get('complete', True):
+            continue
         seasons[label]['imp'] += d['totalImport']
         seasons[label]['exp'] += d['totalExport']
         for r in retailers:
