@@ -931,6 +931,16 @@ def calculate_costs(intervals, retailers):
 
 # ─── HTML Generation ─────────────────────────────────────────────────────────
 
+def _header(name):
+    """Wrap multi-word retailer names over two lines for narrower columns."""
+    import html as _h
+    parts = name.split()
+    if len(parts) <= 2:
+        return _h.escape(name)
+    mid = (len(parts) + 1) // 2
+    return _h.escape(' '.join(parts[:mid])) + '<br>' + _h.escape(' '.join(parts[mid:]))
+
+
 def daily_report_html(daily_summary, retailers, days=None):
     html = '''<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
     <thead><tr style="background:#1a1a1a;color:white">
@@ -938,7 +948,7 @@ def daily_report_html(daily_summary, retailers, days=None):
     <th style="padding:4px;text-align:right">Imp kWh</th>
     <th style="padding:4px;text-align:right">Exp kWh</th>'''
     for r in retailers:
-        html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
+        html += f'<th style="padding:4px;text-align:right">{_header(r["name"])}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
     dates = sorted(daily_summary.keys(), reverse=True)
     if days is not None: dates = dates[:max(1, days)]
@@ -1220,7 +1230,7 @@ def monthly_report_html(daily_summary, retailers):
     html += '<th style="padding:4px;text-align:right">Avg Imp kWh</th><th style="padding:4px;text-align:right">Avg Exp kWh</th>'
     html += '<th style="padding:4px;text-align:right">Avg Solar kWh</th><th style="padding:4px;text-align:right">Avg Load kWh</th>'
     for r in retailers:
-        html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
+        html += f'<th style="padding:4px;text-align:right">{_header(r["name"])}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
     for m in sorted(months.keys(), reverse=True):
         mm = months[m]
@@ -1318,7 +1328,7 @@ def seasonal_report_html(daily_summary, retailers):
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Season</th>'
     html += '<th style="padding:4px;text-align:right">Imp kWh</th><th style="padding:4px;text-align:right">Exp kWh</th>'
     for r in retailers:
-        html += f'<th style="padding:4px;text-align:right">{r["name"]}</th>'
+        html += f'<th style="padding:4px;text-align:right">{_header(r["name"])}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
     for s in sorted(seasons.keys(), reverse=True):
         ss = seasons[s]
