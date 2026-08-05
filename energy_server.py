@@ -75,34 +75,51 @@ def save_settings(patch):
     with open(SETTINGS_PATH, 'w') as f:
         json.dump(s, f)
 
+_COMPUTING = False
+
+def _recompute(combined):
+    """Actual compute worker. Guards against duplicate concurrent computes and
+    clears the in-flight flag when done."""
+    global _COMPUTING
+    try:
+        with _COMPUTE_LOCK:
+            if combined == _cache['data_hash'] and _cache['daily_summary']:
+                return
+            log.info('Recomputing costs (CSV/config changed)...')
+            t0 = time.time()
+            try:
+                retailers = load_retailer_config(CONFIG_PATH)
+                rows = load_csv_rows(CSV_PATH)
+                intervals = extract_intervals(rows)
+                daily_data, daily_summary, chart_data, five_min_detail = calculate_costs(intervals, retailers)
+                _cache.update({
+                    'rows': rows, 'retailers': retailers,
+                    'daily_summary': daily_summary, 'chart_data': chart_data,
+                    'five_min_detail': five_min_detail, 'data_hash': combined,
+                })
+                log.info(f'Computed {len(daily_summary)} days in {time.time()-t0:.1f}s')
+            except Exception as e:
+                log.error(f'Computation failed: {e}')
+    finally:
+        _COMPUTING = False
+
 def ensure_computed():
-    """Recompute if CSV/config changed, or the optimise-all flag changed.
-    Thread-safe: callers block on the lock until any in-flight compute finishes,
-    then reuse the cache (double-checked locking)."""
+    """Stale-while-revalidate. Returns immediately with last-known data and
+    recomputes in the background when the CSV/config changed. Only blocks on the
+    very first computation (no cached data yet), e.g. immediately after restart."""
+    global _COMPUTING
     load_settings()
     csv_hash = _file_hash(CSV_PATH)
     cfg_hash = _file_hash(CONFIG_PATH)
     combined = csv_hash + '|' + cfg_hash + '|' + ('1' if OPTIMISE_ALL else '0')
     if combined == _cache['data_hash'] and _cache['daily_summary']:
         return
-    with _COMPUTE_LOCK:
-        if combined == _cache['data_hash'] and _cache['daily_summary']:
-            return
-        log.info('Recomputing costs (CSV/config changed)...')
-        t0 = time.time()
-        try:
-            retailers = load_retailer_config(CONFIG_PATH)
-            rows = load_csv_rows(CSV_PATH)
-            intervals = extract_intervals(rows)
-            daily_data, daily_summary, chart_data, five_min_detail = calculate_costs(intervals, retailers)
-            _cache.update({
-                'rows': rows, 'retailers': retailers,
-                'daily_summary': daily_summary, 'chart_data': chart_data,
-                'five_min_detail': five_min_detail, 'data_hash': combined,
-            })
-            log.info(f'Computed {len(daily_summary)} days in {time.time()-t0:.1f}s')
-        except Exception as e:
-            log.error(f'Computation failed: {e}')
+    if not _cache['daily_summary']:
+        _recompute(combined)
+        return
+    if not _COMPUTING:
+        _COMPUTING = True
+        threading.Thread(target=_recompute, args=(combined,), daemon=True).start()
 
 # ─── Retailer Config ─────────────────────────────────────────────────────────
 
