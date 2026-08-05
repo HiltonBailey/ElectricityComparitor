@@ -43,6 +43,9 @@ log = logging.getLogger('energy')
 
 # ─── Cached Computation ─────────────────────────────────────────────────────
 
+import threading
+_COMPUTE_LOCK = threading.Lock()
+
 _cache = {'rows': [], 'retailers': [], 'data_hash': '', 'daily_summary': {}, 'chart_data': [],
           'five_min_detail': {}, 'last_mtime': 0}
 
@@ -73,28 +76,33 @@ def save_settings(patch):
         json.dump(s, f)
 
 def ensure_computed():
-    """Recompute if CSV/config changed, or the optimise-all flag changed."""
+    """Recompute if CSV/config changed, or the optimise-all flag changed.
+    Thread-safe: callers block on the lock until any in-flight compute finishes,
+    then reuse the cache (double-checked locking)."""
     load_settings()
     csv_hash = _file_hash(CSV_PATH)
     cfg_hash = _file_hash(CONFIG_PATH)
     combined = csv_hash + '|' + cfg_hash + '|' + ('1' if OPTIMISE_ALL else '0')
     if combined == _cache['data_hash'] and _cache['daily_summary']:
         return
-    log.info('Recomputing costs (CSV/config changed)...')
-    t0 = time.time()
-    try:
-        retailers = load_retailer_config(CONFIG_PATH)
-        rows = load_csv_rows(CSV_PATH)
-        intervals = extract_intervals(rows)
-        daily_data, daily_summary, chart_data, five_min_detail = calculate_costs(intervals, retailers)
-        _cache.update({
-            'rows': rows, 'retailers': retailers,
-            'daily_summary': daily_summary, 'chart_data': chart_data,
-            'five_min_detail': five_min_detail, 'data_hash': combined,
-        })
-        log.info(f'Computed {len(daily_summary)} days in {time.time()-t0:.1f}s')
-    except Exception as e:
-        log.error(f'Computation failed: {e}')
+    with _COMPUTE_LOCK:
+        if combined == _cache['data_hash'] and _cache['daily_summary']:
+            return
+        log.info('Recomputing costs (CSV/config changed)...')
+        t0 = time.time()
+        try:
+            retailers = load_retailer_config(CONFIG_PATH)
+            rows = load_csv_rows(CSV_PATH)
+            intervals = extract_intervals(rows)
+            daily_data, daily_summary, chart_data, five_min_detail = calculate_costs(intervals, retailers)
+            _cache.update({
+                'rows': rows, 'retailers': retailers,
+                'daily_summary': daily_summary, 'chart_data': chart_data,
+                'five_min_detail': five_min_detail, 'data_hash': combined,
+            })
+            log.info(f'Computed {len(daily_summary)} days in {time.time()-t0:.1f}s')
+        except Exception as e:
+            log.error(f'Computation failed: {e}')
 
 # ─── Retailer Config ─────────────────────────────────────────────────────────
 
@@ -563,6 +571,18 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         if carry:
             start_soc = soc2
     return results
+
+def _dispatch_battery_realistic(r, intervals, pea_by_period, bat=None):
+    """Conservative battery dispatch: no SOC carry between days.
+
+    Mirrors _dispatch_battery logic but resets SOC to init_soc at the start of
+    every day (carry_soc=False). This removes the 'overnight bank' advantage the
+    ideal optimiser gets from day-to-day perfect carryover, giving a more
+    realistic attainable floor for the battery's value.
+    """
+    bat_real = dict(bat) if bat is not None else {}
+    bat_real['carry_soc'] = False
+    return _dispatch_battery(r, intervals, pea_by_period, bat_real)
 
 def _fixed_tou_interval(d, r, h, ti, ek):
     fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
@@ -2053,13 +2073,17 @@ def main():
         sys.stdout = open('/tmp/energy_server.log', 'w')
         sys.stderr = sys.stdout
     
-    try:
-        ensure_computed()
-    except Exception as e:
-        log.warning(f'Initial compute failed: {e}')
-    
     server = HTTPServer(('', PORT), Handler)
     log.info(f'Serving on http://0.0.0.0:{PORT}')
+
+    def _initial_compute():
+        try:
+            ensure_computed()
+        except Exception as e:
+            log.warning(f'Initial compute failed: {e}')
+
+    threading.Thread(target=_initial_compute, daemon=True).start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
