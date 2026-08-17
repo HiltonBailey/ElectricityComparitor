@@ -223,6 +223,33 @@ def load_retailer_config(path):
             retailers.append(r)
     return retailers
 
+def load_retailer_config_raw(path):
+    """Read retailer config verbatim (preserving literal `model` values such as
+    fixed_tou_real) for the config editor so edits round-trip unchanged."""
+    retailers = []
+    numeric_fields = [
+        'dsc', 'sub', 'off_pk', 'sh_pk', 'pk_pk',
+        'off_fit', 'sh_fit', 'pk_fit', 'sp_fit', 'sp_fit2', 'sp_limit',
+        'off_s', 'off_e', 'pk_s', 'pk_e', 'sp_s', 'sp_e',
+        'free_s', 'free_e',
+        'off_fit_s', 'off_fit_e', 'sh_fit_s', 'sh_fit_e',
+        'pk_fit_s', 'pk_fit_e', 'sp_fit_s', 'sp_fit_e',
+        'fixed_export', 'ev_s', 'ev_e', 'ev_pk', 'off_limit', 'billing_day',
+        'pea_base', 'pea_override', 'bat_cap', 'bat_chg', 'bat_dis', 'bat_eff',
+        'soc_min', 'soc_max', 'init_soc', 'chg_pct', 'dis_pct', 'inv_cap',
+        'ac_cap', 'var_buy', 'var_sell', 'hyb_buy'
+    ]
+    with open(path, newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            r = {k.strip(): (v.strip() if v is not None else '') for k, v in row.items()}
+            for fn in numeric_fields:
+                if fn in r:
+                    try: r[fn] = float(r[fn])
+                    except ValueError: r[fn] = 0.0
+            retailers.append(r)
+    return retailers
+
 # ─── CSV Reader ──────────────────────────────────────────────────────────────
 
 def _f(v):
@@ -2010,7 +2037,7 @@ _REPORTS_HTML = '''<div class=subtabs>
 <label>From <input type=date id=fDate oninput=loadDaily() onchange=loadDaily()></label>
 <label>To <input type=date id=tDate oninput=loadDaily() onchange=loadDaily()></label>
 <label>Days <input type=number id=daysNum value=90 min=1 max=365 oninput=loadDaily() onchange=loadDaily()></label>
-<label>Billing Period <select id=bpSel oninput=loadDaily() onchange=loadDaily()><option value="">All</option></select></label>
+<label>Billing Period <select id=bpSel oninput=bpChanged() onchange=bpChanged()><option value="">All</option></select></label>
 </div>
 <div style=flex:1><iframe id=dailyFrame src=/daily-report?days=90 style="width:100%;height:100%;border:none;background:#0d0d0d"></iframe></div>
 </div>
@@ -2081,8 +2108,11 @@ if(!r||!d)return;
 document.getElementById('hourlyStatus').textContent=r+' — '+d;
 document.getElementById('hourlyFrame').src='/hourly-detail?retailer='+encodeURIComponent(r)+'&date='+encodeURIComponent(d);
 }
+function clearDates(){document.getElementById('fDate').value='';document.getElementById('tDate').value='';}
+function bpChanged(){clearDates();loadDaily();}
 function loadDaily(){
-var f=document.getElementById('fDate').value,t=document.getElementById('tDate').value,d=document.getElementById('daysNum').value,b=document.getElementById('bpSel').value;
+ var f=document.getElementById('fDate').value,t=document.getElementById('tDate').value,d=document.getElementById('daysNum').value,b=document.getElementById('bpSel').value;
+ if(f||t){var sel=document.getElementById('bpSel');if(sel)sel.value='';b='';}
  var p=[];
  if(b){p.push('bp='+b)}
  else{
@@ -2241,12 +2271,13 @@ def config_editor_html(rows):
         for col in visible_cols:
             val = row.get(col, '')
             if col == 'model':
-                sel = ('<select name="model_%d">' % (ri+1) +
-                    '<option value="fixed_tou"%s>fixed_tou</option>' % (' selected' if val == 'fixed_tou' else '') +
-                    '<option value="hybrid"%s>hybrid</option>' % (' selected' if val == 'hybrid' else '') +
-                    '<option value="variable"%s>variable</option>' % (' selected' if val == 'variable' else '') +
-                    '<option value="variable_optimised"%s>var_optim</option>' % (' selected' if val == 'variable_optimised' else '') +
-                    '</select>')
+                opts = ['fixed_tou_real', 'fixed_tou', 'hybrid', 'variable', 'variable_optimised']
+                if val and val not in opts:
+                    opts = [val] + opts
+                sel = '<select name="model_%d">' % (ri+1)
+                for o in opts:
+                    sel += '<option value="%s"%s>%s</option>' % (o, ' selected' if val == o else '', o)
+                sel += '</select>'
                 cells.append('<td style="padding:2px 4px">' + sel + '</td>')
             elif col == 'name':
                 cells.append('<td style="padding:2px 4px"><input name="name_%d" value="%s" style="width:140px"></td>' % (ri+1, hmod.escape(val)))
@@ -2266,6 +2297,7 @@ def config_editor_html(rows):
     for col in visible_cols:
         if col == 'model':
             blank_cells.append('<td style="padding:2px 4px"><select name="model_' + str(len(rows)+1) + '">'
+                '<option value="fixed_tou_real">fixed_tou_real</option>'
                 '<option value="fixed_tou">fixed_tou</option>'
                 '<option value="hybrid">hybrid</option>'
                 '<option value="variable">variable</option>'
@@ -2414,8 +2446,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({'optimise_all': OPTIMISE_ALL, 'feasibility_guard': FEASIBILITY_GUARD})
         elif path == '/api/retailer-config':
             try:
-                raw = _read_config_raw(CONFIG_PATH)
-                rows = load_retailer_config(CONFIG_PATH)
+                rows = load_retailer_config_raw(CONFIG_PATH)
                 self._html(config_editor_html(rows))
             except Exception as e:
                 self._html('<div style="color:red;padding:20px">Error reading config: ' + str(e) + '</div>')
@@ -2481,6 +2512,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'text/html;charset=utf-8')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
         self.end_headers()
         self.wfile.write(html.encode())
     
