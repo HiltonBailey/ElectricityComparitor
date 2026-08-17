@@ -63,6 +63,8 @@ HA SMB share (192.168.50.100:/share)
 - **Proxmox host**: 192.168.50.49 (root / `Ha0118021669`), n8n container 104
 - **HA**: 192.168.50.100:8123, Node-RED admin on port 1880 (basic auth `stilgar`/`Ha0118021669`)
 - **PEA**: Peak Export Adjustment = LWAP − TWAP − pea_base. Applied to FlowPower monthly.
+- **Load data caveat**: Switchboard upgrade error inflated `house_load` readings until Aug 7 2026. Pre-Aug 7 load values are unreliable — e.g. July 2026 measured 25.8 kWh/day but true value is ≈22.9 kWh/day (July 2025 baseline 19.91 + 3 kWh heat pump from Dec 2025). Reports intentionally keep raw values (no correction applied).
+- **Solar expectation (Aug 2026+ noting via forecast)**: System already hit ~29 kWh/day within the first week of Aug 2026; user expects August to finish 31-33 kWh/day avg (clear winter skies + sun path climbing; possible 34-35 on clear late-Aug days). This is above the current PVGIS-based project of ~25-26 kWh/day.
 - **CSV columns (14)**: datetime,offpeak,shoulder,peak,export,bat_charge,bat_charge2,bat_discharge,house_load,gen_price,fit_price,aemo_price,pe_datetime,solar_gen
 - **Config columns (37)**: name,model,dsc,sub,off_pk,sh_pk,pk_pk,off_fit,sh_fit,pk_fit,sp_fit,sp_fit2,sp_limit,off_s,off_e,pk_s,pk_e,sp_s,sp_e,off_fit_s,off_fit_e,sh_fit_s,sh_fit_e,pk_fit_s,pk_fit_e,sp_fit_s,sp_fit_e,fixed_export,ev_s,ev_e,ev_pk,off_limit,billing_day,pea_base,pea_override,glo_rebate,energymadeeasy_planid
 

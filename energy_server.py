@@ -35,6 +35,7 @@ CSV_PATH = '5minelecNEW.csv'
 CONFIG_PATH = 'retailer_config.csv'
 SETTINGS_PATH = 'settings.json'
 OPTIMISE_ALL = False
+FEASIBILITY_GUARD = True
 PORT = 8080
 DAEMON = False
 
@@ -57,12 +58,15 @@ def _file_hash(path):
         return ''
 
 def load_settings():
-    global OPTIMISE_ALL
+    global OPTIMISE_ALL, FEASIBILITY_GUARD
     try:
         with open(SETTINGS_PATH) as f:
-            OPTIMISE_ALL = bool(json.load(f).get('optimise_all', False))
+            s = json.load(f)
+            OPTIMISE_ALL = bool(s.get('optimise_all', False))
+            FEASIBILITY_GUARD = bool(s.get('feasibility_guard', True))
     except Exception:
         OPTIMISE_ALL = False
+        FEASIBILITY_GUARD = True
 
 def save_settings(patch):
     s = {}
@@ -103,18 +107,20 @@ def _recompute(combined):
     finally:
         _COMPUTING = False
 
-def ensure_computed():
+def ensure_computed(wait=False):
     """Stale-while-revalidate. Returns immediately with last-known data and
-    recomputes in the background when the CSV/config changed. Only blocks on the
-    very first computation (no cached data yet), e.g. immediately after restart."""
+    recomputes in the background when the CSV/columns changed, unless `wait` is
+    set (used after a settings toggle) in which case it blocks until the
+    recompute finishes so the caller never sees stale data for the new flag.
+    Only the very first computation (no cached data yet) always blocks."""
     global _COMPUTING
     load_settings()
     csv_hash = _file_hash(CSV_PATH)
     cfg_hash = _file_hash(CONFIG_PATH)
-    combined = csv_hash + '|' + cfg_hash + '|' + ('1' if OPTIMISE_ALL else '0')
+    combined = csv_hash + '|' + cfg_hash + '|' + ('1' if OPTIMISE_ALL else '0') + ('|g' if FEASIBILITY_GUARD else '|0')
     if combined == _cache['data_hash'] and _cache['daily_summary']:
         return
-    if not _cache['daily_summary']:
+    if not _cache['daily_summary'] or wait:
         _recompute(combined)
         return
     if not _COMPUTING:
@@ -183,7 +189,7 @@ def _battery_spec(retailers):
     for r in retailers:
         if float(r.get('bat_cap', 0)) > 0:
             return r
-    return {'bat_cap': 41.92, 'bat_chg': 11.0, 'bat_dis': 10.0, 'bat_eff': 0.9,
+    return {'bat_cap': 39.71, 'bat_chg': 11.0, 'bat_dis': 10.0, 'bat_eff': 0.9,
             'soc_min': 0.02, 'soc_max': 1.0, 'init_soc': 0.5, 'inv_cap': 10.0,
             'ac_cap': 14.5}
 
@@ -199,7 +205,7 @@ def load_retailer_config(path):
         'fixed_export', 'ev_s', 'ev_e', 'ev_pk', 'off_limit', 'billing_day',
         'pea_base', 'pea_override', 'bat_cap', 'bat_chg', 'bat_dis', 'bat_eff',
         'soc_min', 'soc_max', 'init_soc', 'chg_pct', 'dis_pct', 'inv_cap',
-        'ac_cap'
+        'ac_cap', 'var_buy', 'var_sell', 'hyb_buy'
     ]
     with open(path, newline='') as f:
         reader = csv.DictReader(f)
@@ -209,6 +215,11 @@ def load_retailer_config(path):
                 if fn in r:
                     try: r[fn] = float(r[fn])
                     except ValueError: r[fn] = 0.0
+            # 'fixed_tou_real' reuses fixed_tou rate logic but triggers the
+            # owner's realistic AGL dispatch instead of the idealised optimiser.
+            if r.get('model') == 'fixed_tou_real':
+                r['model'] = 'fixed_tou'
+                r['realistic_dispatch'] = True
             retailers.append(r)
     return retailers
 
@@ -241,6 +252,8 @@ def extract_intervals(rows):
     prev_imp = prev_exp = 0.0
     prev_load = prev_solar = 0.0
     prev_date = None
+    vals = []
+    SPK_KWH = 8.0
     for row in rows:
         pe = row['pe']
         ci = row['Import_kWh']; ce = row['export']
@@ -251,18 +264,58 @@ def extract_intervals(rows):
             dt = datetime.strptime(pe, '%Y-%m-%d %H:%M:%S')
         except: continue
         date = dt.strftime('%Y-%m-%d')
-        if date != prev_date:
-            prev_load = prev_solar = 0.0
-            prev_date = date
-        cl = row['load_reg']; cs = row['solar_reg']
-        l_kwh = max(0.0, cl - prev_load) if cl >= prev_load else 0.0
-        s_kwh = max(0.0, cs - prev_solar) if cs >= prev_solar else 0.0
-        prev_load = cl; prev_solar = cs
+        vals.append((dt, date, row['load_reg'], row['solar_reg'],
+                     i_kwh, e_kwh, ci, ce, row['aemo_price']))
+    for n, (dt, date, cl, cs, i_kwh, e_kwh, ci, ce, aemo) in enumerate(vals):
+        nxt_load = vals[n + 1][2] if n + 1 < len(vals) else None
+        nxt_solar = vals[n + 1][3] if n + 1 < len(vals) else None
+        # Cumulative counters carry across midnight; a genuine reset drops back
+        # near zero AND stays low on the next sample. Spurious single-sample
+        # dips (glitches) are ignored: prev is kept so the real total counts.
+        if cl < prev_load:
+            if cl <= 5.0 and (nxt_load is None or (nxt_load <= 5.0 and nxt_load < prev_load)):
+                prev_load = 0.0
+                l_kwh = cl
+                prev_load = cl
+            else:
+                l_kwh = 0.0
+        elif cl - prev_load > SPK_KWH:
+            # Upward spike: one sample jumps beyond any reasonable single-interval
+            # load (e.g. >=80kW in 5min). Treat as a one-off glitch: don't count
+            # the spike. If the next sample drops back, keep prev unchanged so
+            # subsequent deltas compute from the pre-spike baseline. If the spike
+            # stays high (baseline shift), adopt the new baseline to avoid losing
+            # all future load.
+            if nxt_load is not None and nxt_load < cl:
+                l_kwh = 0.0
+            else:
+                l_kwh = 0.0
+                prev_load = cl
+        else:
+            l_kwh = max(0.0, cl - prev_load)
+            prev_load = cl
+        if cs < prev_solar:
+            if cs <= 5.0 and (nxt_solar is None or (nxt_solar <= 5.0 and nxt_solar < prev_solar)):
+                prev_solar = 0.0
+                s_kwh = cs
+                prev_solar = cs
+            else:
+                s_kwh = 0.0
+        elif cs - prev_solar > SPK_KWH:
+            if nxt_solar is not None and nxt_solar < cs:
+                s_kwh = 0.0
+            else:
+                s_kwh = 0.0
+                prev_solar = cs
+        else:
+            s_kwh = max(0.0, cs - prev_solar)
+            prev_solar = cs
         intervals.append({
-            'pe': pe, 'date': date, 'time': dt.strftime('%H:%M:%S'),
+            'pe': dt.strftime('%Y-%m-%d %H:%M:%S'), 'date': date,
+            'time': dt.strftime('%H:%M:%S'),
             'h': dt.hour + dt.minute / 60.0,
             'i_kwh': i_kwh, 'e_kwh': e_kwh, 'cum_imp': ci, 'cum_exp': ce,
-            'aemo': row['aemo_price'],
+            'aemo': aemo,
             'load_kwh': l_kwh, 'solar_kwh': s_kwh,
         })
     return intervals
@@ -283,9 +336,9 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
     economically worse than simply leaving the battery idle.
     `bat` overrides the physical battery spec so all retailers share one battery.
     Returns dict: date -> per-interval {'sim_i','sim_e','curt','soc','chg','dis'}.
-    """
+     """
     b = bat if bat is not None else r
-    cap = float(b.get('bat_cap', 41.92))
+    cap = float(b.get('bat_cap', 39.71))
     chg_rate = float(b.get('bat_chg', 11)) / 12.0
     dis_rate = float(b.get('bat_dis', 10)) / 12.0
     eff = float(b.get('bat_eff', 0.9))
@@ -332,7 +385,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         # optimised result never-worse-than-measured on every feasible day.
         burst = max(abs((load[i] - solar[i]) - (day[i]['i_kwh'] - day[i]['e_kwh'])) for i in range(n))
         exp_ok = all(day[i]['e_kwh'] <= 1e-9 or day[i]['e_kwh'] + day[i]['load_kwh'] <= inv_wh * 1.25 for i in range(n))
-        if burst > max(dis_rate, chg_rate) * 1.2 or not exp_ok:
+        if FEASIBILITY_GUARD and not OPTIMISE_ALL and (burst > max(dis_rate, chg_rate) * 1.2 or not exp_ok):
             results[date] = [{'sim_i': day[i]['i_kwh'], 'sim_e': day[i]['e_kwh'], 'curt': 0.0,
                               'soc': start_soc, 'chg': 0.0, 'dis': 0.0} for i in range(n)]
             continue
@@ -349,11 +402,11 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
 
         # ---- charge phase: solar surplus first (free, chronological) ----
         # Charge rate tapers from full (11 kW) down to 0 as SOC rises from 90% to
-        # 100%, matching the inverter's behaviour near full charge.
+        # 100%, matching real inverter behaviour (minor slow-down only at >99%).
         def taper_rate(s):
-            if s <= 0.9 * soc_max:
+            if s <= 0.99 * soc_max:
                 return 1.0
-            return max(0.0, min(1.0, (soc_max - s) / max(1e-9, 0.1 * soc_max)))
+            return max(0.0, min(1.0, (soc_max - s) / max(1e-9, 0.01 * soc_max)))
 
         soc = start_soc
         solar_chg = [0.0] * n
@@ -398,7 +451,6 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
             uses.sort(key=lambda u: -u[0])
             return uses
         uses = _build_uses()
-
         dis_def = [0.0] * n; dis_exp = [0.0] * n
         used_by = [0.0] * n
 
@@ -421,7 +473,38 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         export_floor = float(r.get('sh_pk', 0)) / eff
         carried_E = max(0.0, start_soc - soc_min)
         solar_E = max(0.0, free_E - carried_E)
-        solar_rem = solar_E
+        # Partial-day lookahead: when today's data ends before a higher-FIT
+        # export window opens later the same day (e.g. AGL 28c at 17-21h), hold
+        # today's solar energy back from low-rate exports now so it can be sold
+        # at the better rate once those intervals arrive. Without this the sim
+        # dumps the day's solar at 3c just because the 28c window isn't in the
+        # data yet. Deficit coverage is untouched (it remains drawn from the
+        # full free pool), only below-floor exports lose access.
+        future_hold = 0.0
+        last_h = day[-1]['h']
+        if last_h < 24.0 - 1e-9:
+            for _ws, _we, _rate, _lim in (
+                (float(r.get('sp_fit_s', 0) or 0), float(r.get('sp_fit_e', 0) or 0),
+                 float(r.get('sp_fit', 0) or 0), sp_cap),
+                (float(r.get('pk_fit_s', 0) or 0), float(r.get('pk_fit_e', 0) or 0),
+                 float(r.get('pk_fit', 0) or 0), 1e18),
+            ):
+                if not _ws and not _we:
+                    continue
+                if _rate <= export_floor + 1e-9:
+                    continue
+                _hrs = 0.0
+                if _ws <= _we:
+                    if _we > last_h:
+                        _hrs = _we - max(_ws, last_h)
+                else:
+                    if last_h < _ws:
+                        _hrs = max(0.0, 24.0 - last_h)
+                if _hrs > 0:
+                    future_hold += min(_hrs * dis_rate * 12.0, _lim)
+        future_hold = min(future_hold, solar_E)
+        solar_rem = max(0.0, solar_E - future_hold)
+        remaining = free_E
         for val, i, typ, is_sp in uses:
             if remaining <= 0:
                 break
@@ -457,7 +540,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         # may only buy the room solar alone cannot fill. This stops overnight
         # grid charging from displacing the next day's solar into a 3c export.
         solar_fill = max(0.0, soc - start_soc)
-        room_start = max(0.0, soc_max - start_soc - solar_fill)
+        room_start = max(0.0, (soc_max - start_soc - solar_fill) / eff)
         arb_charge_cap = min(chg_rate * sum(1 for i in range(n) if buy[i] <= cheap_rate + 1e-12),
                              room_start)
         grid_def = [0.0] * n; grid_exp = [0.0] * n
@@ -467,7 +550,12 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         # and sp-window exports. Winter has no solar surplus, so the battery cannot
         # export (no bank) — FlowPower is not a usable retailer in winter.
         if r.get('model') == 'hybrid':
-            grid_chg = [0.0] * n
+            # FlowPower: flat import rate. The PEA (peak-exposure adjustment)
+            # already prices import from the owner's real low-AEMO buying (the
+            # measured import is weighted to ~2-7c AEMO). Grid-charging the
+            # battery would deplete it during the day and force higher-AEMO
+            # evening imports, raising the import-weighted AEMO and worsening
+            # the PEA, so the pack is charged from solar surplus only.
             out = []
             soc2 = start_soc
             for i, iv in enumerate(day):
@@ -575,7 +663,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         for i, iv in enumerate(day):
             chg_tot = solar_chg[i] + grid_chg[i]
             dis_tot = dis_def[i] + dis_exp[i] + grid_def[i] + grid_exp[i]
-            net = load[i] - solar[i] + grid_chg[i] - dis_tot
+            net = load[i] - solar[i] + chg_tot - dis_tot
             sim_i = max(0.0, net)
             sim_e = max(0.0, -net)
             exp_room = max(0.0, inv_wh - load[i])
@@ -600,6 +688,281 @@ def _dispatch_battery_realistic(r, intervals, pea_by_period, bat=None):
     bat_real = dict(bat) if bat is not None else {}
     bat_real['carry_soc'] = False
     return _dispatch_battery(r, intervals, pea_by_period, bat_real)
+
+
+def _fetch_solcast_today():
+    """Total forecast solar for today (kWh) from the HA Solcast sensor, else None."""
+    import json
+    import os
+    import urllib.request
+    url = os.environ.get('HA_URL', 'http://192.168.50.100:8123')
+    token = os.environ.get('HA_TOKEN')
+    ent = os.environ.get('SOLCAST_TODAY',
+                         'sensor.solcast_pv_forecast_forecast_today')
+    if not token:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"{url}/api/states/{ent}",
+            headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return float(json.load(r)['state'])
+    except Exception:
+        return None
+
+
+def _dispatch_battery_variable(r, intervals, pea_by_period, bat=None):
+    """Spot-priced (Amber) battery dispatch: buy low / sell high on AEMO.
+
+    Grid-charges the battery when the AEMO spot price is below `var_buy`, and
+    discharges to the grid (export) when the spot price is above `var_sell`.
+    The battery also self-discharges to cover household load whenever importing
+    would otherwise be required. Solar surplus is captured first (free), and any
+    solar the battery cannot hold bypasses straight to export. Both thresholds
+    are adjustable per-retailer in the config (var_buy / var_sell)."""
+    b = bat if bat is not None else r
+    cap = float(b.get('bat_cap', 39.71))
+    chg_rate = float(b.get('bat_chg', 11)) / 12.0
+    dis_rate = float(b.get('bat_dis', 10)) / 12.0
+    eff = float(b.get('bat_eff', 0.9))
+    inv_wh = float(b.get('inv_cap', 10)) / 12.0
+    ac_wh = float(b.get('ac_cap', 14.5)) / 12.0
+    soc_min = float(b.get('soc_min', 0.02)) * cap
+    soc_max = float(b.get('soc_max', 1.0)) * cap
+    init_soc = float(b.get('init_soc', 0.5)) * cap
+    var_buy = float(r.get('var_buy', 0.05))
+    var_sell = float(r.get('var_sell', 0.15))
+    by_date = {}
+    for iv in intervals:
+        by_date.setdefault(iv['date'], []).append(iv)
+    carry = bool(b.get('carry_soc', True))
+    start_soc = init_soc
+    results = {}
+    for date in sorted(by_date):
+        day = by_date[date]
+        n = len(day)
+        soc = start_soc
+        out = []
+        for i, iv in enumerate(day):
+            aemo = iv['aemo']
+            load = iv['load_kwh']; solar = iv['solar_kwh']
+            # 1. solar charge (free); surplus the battery can't hold bypasses to export
+            c = min(max(0.0, solar - load), chg_rate, (soc_max - soc) / eff)
+            soc += c * eff
+            surplus = max(0.0, solar - load) - c
+            # 2. self-use: cover remaining deficit from battery (avoid import)
+            need = max(0.0, load - solar)
+            du = min(need, dis_rate, (soc - soc_min) / eff)
+            soc -= du * eff
+            # 3. export when spot price is high (battery energy)
+            bp_exp = 0.0
+            if aemo > var_sell:
+                exp_room = max(0.0, inv_wh - load)
+                bp_exp = min(dis_rate - du, (soc - soc_min) / eff, exp_room)
+                bp_exp = max(0.0, bp_exp)
+                soc -= bp_exp * eff
+            # 4. grid charge when spot price is low
+            g = 0.0
+            if aemo < var_buy:
+                chg_room = max(0.0, ac_wh - max(0.0, load - solar))
+                g = min(chg_rate, chg_room, (soc_max - soc) / eff)
+                g = max(0.0, g)
+                soc += g * eff
+            exp_room = max(0.0, inv_wh - load)
+            sim_e = min(surplus + bp_exp, exp_room)
+            sim_i = max(0.0, need - du + g)
+            curt = max(0.0, surplus + bp_exp - sim_e)
+            out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt, 'soc': soc,
+                        'chg': c + g, 'dis': du + bp_exp})
+        results[date] = out
+        if carry:
+            start_soc = soc
+    return results
+
+
+def _dispatch_battery_agl(r, intervals, pea_by_period, bat=None):
+    """AGL realistic dispatch: forecast-gated, charge-as-late-as-possible.
+
+    Mirrors the owner's real routine:
+      * Estimate the day's TOTAL solar up front:
+          - closed days -> actual solar_gen summed from the CSV
+          - current day -> Solcast 'forecast_today' (HA sensor); if unavailable,
+                           linearly project the day's solar to completion
+    * 21:00-22:00  grid-charge up to a 10% backup reserve
+      * 22:00-08:00  hold the 10% reserve (grid covers load; battery idle)
+      * 08:00-peak_s  absorb solar surplus into the pack; only grid top-up the
+                    DEFICIT (target minus expected solar) and do it as late as
+                    the charge rate allows before the peak-import window, keeping
+                    headroom for any late solar
+      * peak import  self-use: discharge to cover load (avoid peak import)
+      * sp_fit window  high-FIT export: discharge to grid at sp_fit, to 2% floor;
+                       carry on into pk_fit window only while off_peak < pk_fit
+    SOC is carried across days (ends ~10% after the reserve charge).
+    Returns dict: date -> per-interval {'sim_i','sim_e','curt','soc','chg','dis'}.
+    """
+    b = bat if bat is not None else r
+    cap = float(b.get('bat_cap', 39.71))
+    chg_rate = float(b.get('bat_chg', 11)) / 12.0
+    dis_rate = float(b.get('bat_dis', 10)) / 12.0
+    eff = float(b.get('bat_eff', 0.9))
+    inv_wh = float(b.get('inv_cap', 10)) / 12.0
+    ac_wh = float(b.get('ac_cap', 14.5)) / 12.0
+    soc_min = float(b.get('soc_min', 0.02)) * cap          # 2% discharge floor
+    reserve = 0.10 * cap                                    # 10% backup hold
+    # Tariff windows are read from config (not hardcoded) so the routine adapts
+    # if AGL shifts its peak/export windows (e.g. peak import starting earlier
+    # than 15:00). Falls back to AGL's current 15:00 / 17:00 / 21:00.
+    peak_s = float(r.get('pk_s', 15)); peak_e = float(r.get('pk_e', 21))        # peak import
+    sp_s = float(r.get('sp_fit_s', 17)); sp_e = float(r.get('sp_fit_e', 21))    # super-peak FIT
+    pkf_s = float(r.get('pk_fit_s', 0)); pkf_e = float(r.get('pk_fit_e', 0))    # peak FIT (optional)
+    off_pk = float(r.get('off_pk', 0))       # off-peak import rate (export gating)
+    sp_fit_rate = float(r.get('sp_fit', 0))
+    pk_fit_rate = float(r.get('pk_fit', 0))
+
+    by_date = {}
+    for iv in intervals:
+        by_date.setdefault(iv['date'], []).append(iv)
+
+    carry = bool(b.get('carry_soc', True))
+    start_soc = None
+    results = {}
+    dates = sorted(by_date)
+    if dates:
+        last_date = dates[-1]
+        solcast_today = _fetch_solcast_today()
+    else:
+        last_date = None
+        solcast_today = None
+
+    for date in dates:
+        day = by_date[date]
+        n = len(day)
+        if start_soc is None:
+            start_soc = reserve                       # first day starts reserved
+        soc = start_soc
+
+        # --- current-day forecast scaling (Solcast total forecast) ---
+        # Closed days use actual solar_gen (f=1). The current day scales the
+        # observed solar up to the Solcast total forecast, so the routine trusts
+        # the forecast and does not pre-charge before the sun has had its say.
+        f = 1.0
+        if date == last_date and solcast_today and solcast_today > 0:
+            actual_total = sum(iv['solar_kwh'] for iv in day)
+            if actual_total > 1e-6:
+                f = solcast_today / actual_total
+
+        # --- Pass 1: solar-only soc profile (no grid), forecast-scaled ---
+        s = start_soc
+        solar_chg = [0.0] * n
+        soc_solar = [0.0] * n
+        for i, iv in enumerate(day):
+            h = iv['h']; L = iv['load_kwh']; S = iv['solar_kwh'] * f
+            c = 0.0; d = 0.0
+            in_hold = (h >= 22.0) or (h < 8.0)
+            in_charge = (8.0 <= h < peak_s)
+            in_res = (21.0 <= h < 22.0)
+            in_peak = (peak_s <= h < peak_e)
+            in_sp = (sp_s <= h < sp_e)
+            in_pkf = (pkf_s <= h < pkf_e)
+            export_sp = in_sp and off_pk < sp_fit_rate
+            export_pkf = in_pkf and off_pk < pk_fit_rate
+            if in_hold:
+                if s < reserve - 1e-9:
+                    c = min(chg_rate, (reserve - s) / eff)
+            elif in_charge:
+                surplus = max(0.0, S - L)
+                if surplus > 0:
+                    c = min(surplus, chg_rate, (cap - s) / eff)
+            elif in_res:
+                if s < reserve - 1e-9:
+                    c = min(chg_rate, (reserve - s) / eff)
+            # discharge: self-use (cover load) during peak import, or full
+            # discharge into a FIT window (load first, surplus exported).
+            if in_peak and not (export_sp or export_pkf):
+                d = min(dis_rate, max(0.0, L - S), (s - soc_min) / eff)
+            if export_sp or export_pkf:
+                d = min(dis_rate, (s - soc_min) / eff)
+            net_load = max(0.0, L - S)
+            c = min(c, max(0.0, ac_wh - net_load), (cap - s) / eff)
+            c = max(0.0, c)
+            net = L - S + c - d
+            sim_i = max(0.0, net); sim_e = max(0.0, -net)
+            exp_room = max(0.0, inv_wh - L)
+            curt = max(0.0, sim_e - exp_room); sim_e = min(sim_e, exp_room)
+            s = min(cap, max(soc_min, s + c * eff - d))
+            solar_chg[i] = c; soc_solar[i] = s
+
+        # --- grid top-up: latest possible, respecting AC limit & capacity ---
+        in_day_idx = [j for j, iv in enumerate(day) if 8.0 <= iv['h'] < peak_s]
+        last_day_idx = in_day_idx[-1] if in_day_idx else -1
+        soc_after_solar = soc_solar[last_day_idx] if last_day_idx >= 0 else start_soc
+        # charge is only `eff` efficient, so the grid ENERGY needed (charge-side)
+        # is the stored deficit divided by eff; the back-fill places charge-energy
+        # amounts, so keep `deficit` in charge-energy units to avoid under-filling.
+        deficit = max(0.0, (cap - soc_after_solar) / eff)   # grid charge kWh to peak_s
+        grid_plan = [0.0] * n
+        if deficit > 1e-9 and in_day_idx:
+            remaining = deficit
+            # back-fill from peak_s so the pack stays empty (headroom) until late
+            for j in reversed(in_day_idx):
+                avail = min(chg_rate, ac_wh - solar_chg[j], (cap - soc_solar[j]) / eff)
+                put = min(avail, remaining)
+                if put <= 0:
+                    break
+                grid_plan[j] = put
+                remaining -= put
+
+        # --- Pass 2: final sim with solar + deferred grid top-up ---
+        s = start_soc
+        out = []
+        for i, iv in enumerate(day):
+            h = iv['h']; L = iv['load_kwh']; S = iv['solar_kwh'] * f
+            chg = 0.0; dis = 0.0
+            in_hold = (h >= 22.0) or (h < 8.0)
+            in_charge = (8.0 <= h < peak_s)
+            in_res = (21.0 <= h < 22.0)
+            in_peak = (peak_s <= h < peak_e)
+            in_sp = (sp_s <= h < sp_e)
+            in_pkf = (pkf_s <= h < pkf_e)
+            export_sp = in_sp and off_pk < sp_fit_rate
+            export_pkf = in_pkf and off_pk < pk_fit_rate
+            if in_hold:
+                if s < reserve - 1e-9:
+                    chg = min(chg_rate, (reserve - s) / eff)
+            elif in_charge:
+                surplus = max(0.0, S - L)
+                if surplus > 0:
+                    chg = min(surplus, chg_rate, (cap - s) / eff)
+                # deferred grid top-up (latest possible before peak import)
+                if grid_plan[i] > 0 and s < cap - 1e-6:
+                    chg = min(chg + grid_plan[i], (cap - s) / eff)
+            elif in_res:
+                if s < reserve - 1e-9:
+                    chg = min(chg_rate, (reserve - s) / eff)
+            # discharge: self-use (cover load) during peak import, or full
+            # discharge into a FIT window (load first, surplus exported).
+            if in_peak and not (export_sp or export_pkf):
+                dis = min(dis_rate, max(0.0, L - S), (s - soc_min) / eff)
+            if export_sp or export_pkf:
+                dis = min(dis_rate, (s - soc_min) / eff)
+            # AC-side import limit while charging: chg + net load <= ac_cap
+            net_load = max(0.0, L - S)
+            chg = min(chg, max(0.0, ac_wh - net_load), (cap - s) / eff)
+            chg = max(0.0, chg)
+            net = L - S + chg - dis
+            sim_i = max(0.0, net)
+            sim_e = max(0.0, -net)
+            exp_room = max(0.0, inv_wh - L)
+            curt = max(0.0, sim_e - exp_room)
+            sim_e = min(sim_e, exp_room)
+            s = min(cap, max(soc_min, s + chg * eff - dis))
+            out.append({'sim_i': sim_i, 'sim_e': sim_e, 'curt': curt,
+                        'soc': s, 'chg': chg, 'dis': dis})
+        results[date] = out
+        if carry:
+            start_soc = s
+    return results
+
 
 def _fixed_tou_interval(d, r, h, ti, ek):
     fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
@@ -746,14 +1109,27 @@ def calculate_costs(intervals, retailers):
     _cache['pea_periods'] = billing_periods
 
     sims = {}
+    # Realistic, strategy-specific dispatches (e.g. the owner's actual AGL
+    # battery routine) are applied only when optimisation is enabled, so the
+    # optimise toggle switches AGL between its real strategy and measured.
+    if OPTIMISE_ALL:
+        for r in retailers:
+            if r.get('realistic_dispatch'):
+                sims[r['name']] = _dispatch_battery_agl(r, intervals, pea_by_period,
+                                                        _battery_spec(retailers))
     if OPTIMISE_ALL:
         bat = _battery_spec(retailers)
         for r in retailers:
-            sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, bat)
+            if r.get('realistic_dispatch'):
+                continue
+            if r['model'] == 'variable_optimised':
+                sims[r['name']] = _dispatch_battery_variable(r, intervals, pea_by_period, bat)
+            else:
+                sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, bat)
     else:
         for r in retailers:
             if r['model'] == 'variable_optimised':
-                sims[r['name']] = _dispatch_battery(r, intervals, pea_by_period, _battery_spec(retailers))
+                sims[r['name']] = _dispatch_battery_variable(r, intervals, pea_by_period, _battery_spec(retailers))
 
     def _accumulate(sims_dict):
         adata = {}
@@ -843,20 +1219,7 @@ def calculate_costs(intervals, retailers):
         else: reb = 0.0
         d['gloRebate'] = reb; d['net'] = round(ri - re + rd + rs - reb, 2)
 
-    if OPTIMISE_ALL:
-        meas_data = _accumulate({})
-        used_meas = set()
-        for date_str in daily_data.keys():
-            for r in retailers:
-                d = daily_data[date_str][r['name']]
-                md = meas_data[date_str][r['name']]
-                _finalize(d, r, date_str)
-                _finalize(md, r, date_str)
-                if md['net'] < d['net']:
-                    daily_data[date_str][r['name']] = md
-                    used_meas.add((date_str, r['name']))
-    else:
-        used_meas = set()
+    used_meas = set()
 
     daily_summary = {}; chart_data = []; five_min_detail = {}
     
@@ -914,23 +1277,23 @@ def calculate_costs(intervals, retailers):
                     elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)):
                         ir = r.get('pk_pk', 0); tou = 'Pk '
                     er = r.get('sh_fit', 0); fit = 'Sho'
-                    if in_window(h, r.get('sp_s', 0), r.get('sp_e', 0)) and r.get('sp_limit', 0) > 0:
+                    if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)) and r.get('sp_limit', 0) > 0:
                         rem = r['sp_limit'] - spu
                         if rem > 0:
                             sp = min(e_kwh, rem); fb = e_kwh - sp; spu += sp
                             er = r.get('sp_fit', 0); fit = 'Sp '
                             if fb > 0:
                                 fr = r.get('sh_fit', 0)
-                                if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): fr = r.get('pk_fit', 0)
+                                if in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): fr = r.get('pk_fit', 0)
                                 er = (sp * r.get('sp_fit', 0) + fb * fr) / e_kwh if e_kwh > 0 else 0
                                 fit = 'Sp+'
                         else:
                             er = r.get('sh_fit', 0); fit = 'Sho'
-                            if in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
+                            if in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
                     else:
-                        if in_window(h, r.get('sp_s', 0), r.get('sp_e', 0)): er = r.get('sp_fit', 0); fit = 'Sp '
-                        elif in_window(h, r.get('pk_s', 0), r.get('pk_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
-                        elif in_window(h, r.get('off_s', 0), r.get('off_e', 0)): er = r.get('off_fit', 0); fit = 'Off'
+                        if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)): er = r.get('sp_fit', 0); fit = 'Sp '
+                        elif in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
+                        elif in_window(h, r.get('off_fit_s', 0), r.get('off_fit_e', 0)): er = r.get('off_fit', 0); fit = 'Off'
                     ic = i_kwh * ir; ec = e_kwh * er
                 elif r['model'] in ('variable', 'variable_optimised'):
                     tou = 'Wsh'; ir = iv['aemo'] + r.get('sh_pk', 0)
@@ -961,7 +1324,8 @@ def calculate_costs(intervals, retailers):
                          'ic': round(tic, 3), 'ec': round(tec, 3),
                          'dsc': r.get('dsc', 0), 'sub': r.get('sub', 0), 'rebate': reb, 'net': nt,
                          'hr18': round(hr18, 3), 'hr19': round(hr19, 3), 'hr20': round(hr20, 3)})
-            fm[date_str] = {'intervals': outs, 'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'net': nt, 'dsc': r.get('dsc', 0), 'sub': r.get('sub', 0), 'rebate': reb}}
+            fm[date_str] = {'intervals': outs, 'basis': 'measured' if sday is None else 'optimised',
+                            'summary': {'hr18': hr18, 'hr19': hr19, 'hr20': hr20, 'net': nt, 'dsc': r.get('dsc', 0), 'sub': r.get('sub', 0), 'rebate': reb}}
         five_min_detail[r['name']] = fm
     
     return daily_data, daily_summary, chart_data, five_min_detail
@@ -983,7 +1347,9 @@ def daily_report_html(daily_summary, retailers, days=None):
     <thead><tr style="background:#1a1a1a;color:white">
     <th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Date</th>
     <th style="padding:4px;text-align:right">Imp kWh</th>
-    <th style="padding:4px;text-align:right">Exp kWh</th>'''
+    <th style="padding:4px;text-align:right">Exp kWh</th>
+    <th style="padding:4px;text-align:right">Solar kWh</th>
+    <th style="padding:4px;text-align:right;color:#ff8">Load kWh</th>'''
     for r in retailers:
         html += f'<th style="padding:4px;text-align:right">{_header(r["name"])}</th>'
     html += '<th style="padding:4px;text-align:right;color:#4CAF50">Cheapest</th></tr></thead><tbody>'
@@ -994,6 +1360,8 @@ def daily_report_html(daily_summary, retailers, days=None):
         html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1">{ds}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{d["totalImport"]:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{d["totalExport"]:.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#fa4">{d.get("totalSolar", 0):.1f}</td>'
+        html += f'<td style="padding:4px;text-align:right;color:#ff8">{d.get("totalLoad", 0):.1f}</td>'
         for r in retailers:
             rd = d['retailers'].get(r['name'], {})
             v = rd.get('net', 0)
@@ -1002,12 +1370,16 @@ def daily_report_html(daily_summary, retailers, days=None):
         html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{d["cheapest"]}</td></tr>'
     ti = sum(daily_summary[ds]['totalImport'] for ds in dates)
     te = sum(daily_summary[ds]['totalExport'] for ds in dates)
+    ts = sum(daily_summary[ds].get('totalSolar', 0) for ds in dates)
+    tl = sum(daily_summary[ds].get('totalLoad', 0) for ds in dates)
     rtot = {r['name']: sum(daily_summary[ds]['retailers'].get(r['name'], {}).get('net', 0) for ds in dates) for r in retailers}
     cheapest = min(rtot, key=lambda rn: rtot[rn])
     html += '<tr style="background:#2a2a2a;font-weight:bold">'
     html += f'<td style="padding:4px;text-align:left;color:white;position:sticky;left:0;background:#2a2a2a;z-index:1">Total</td>'
     html += f'<td style="padding:4px;text-align:right;color:#8cf">{ti:.1f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#fc8">{te:.1f}</td>'
+    html += f'<td style="padding:4px;text-align:right;color:#9a4">{ts:.1f}</td>'
+    html += f'<td style="padding:4px;text-align:right;color:#ff8">{tl:.1f}</td>'
     for r in retailers:
         v = rtot[r['name']]; c = '#4CAF50' if r['name'] == cheapest else '#ccc'
         html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
@@ -1018,6 +1390,13 @@ def daily_report_html(daily_summary, retailers, days=None):
 _PVGIS_TERRIGAL = {1: 4.71, 2: 4.24, 3: 3.58, 4: 2.91, 5: 2.28, 6: 1.78,
                    7: 2.14, 8: 2.95, 9: 3.84, 10: 4.42, 11: 4.86, 12: 5.04}
 _EST_MONTHS_AHEAD = 4
+# User-stated solar expectations for upcoming periods (kWh/day). Overrides the
+# PVGIS seasonal model for these month keys. For the current month the value is
+# the forecast daily average for the REMAINING days (actuals-to-date are kept);
+# for future estimated months it is the whole-month daily average. Expected
+# daily solar average supplied by the user (Aug 2026: clear winter skies +
+# climbing sun path, expect 31-33 kWh/day month average).
+_SOLAR_OVERRIDE = {'2026-08': 34.0}
 
 def _forecast_state(daily_summary, retailers):
     if not daily_summary:
@@ -1127,6 +1506,9 @@ def _forecast_state(daily_summary, retailers):
         t = (mo - last_m) % 12 / span
         fd = {}
         fd['solar'] = _PVGIS_TERRIGAL[mo] * pvgis_factor(mo)
+        ov = _SOLAR_OVERRIDE.get(f'{y:04d}-{mo:02d}')
+        if ov:
+            fd['solar'] = float(ov)
         sun, ld = fd['solar'], a['load'] + (b['load'] - a['load']) * t
         fd['load'] = ld
         if coef['imp'] is not None:
@@ -1412,8 +1794,8 @@ def fivemin_html(fm, ds, rname, date_str):
     ivs = d['intervals']; tot = ivs[-1] if ivs else {}
     dr = ds.get(date_str, {}).get('retailers', {}).get(rname, {})
     if dr:
-        ik = ds[date_str].get('totalImport', tot.get('ik', 0))
-        ek = ds[date_str].get('totalExport', tot.get('ek', 0))
+        ik = tot.get('ik', ds[date_str].get('totalImport', 0))
+        ek = tot.get('ek', ds[date_str].get('totalExport', 0))
         ic = dr.get('import', tot.get('ic', 0))
         ec = dr.get('export', tot.get('ec', 0))
         dsc = dr.get('dsc', tot.get('dsc', 0))
@@ -1425,8 +1807,10 @@ def fivemin_html(fm, ds, rname, date_str):
         dsc = tot.get('dsc', 0); reb = tot.get('rebate', 0)
         net = tot.get('net', 0)
     sub = dr.get('sub', tot.get('sub', 0))
+    basis = d.get('basis', 'optimised')
+    badge_col = '#4CAF50' if basis == 'optimised' else '#fc8'
     h = (f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#151515;color:#aaa;font-size:14px;font-weight:bold;border-bottom:1px solid #222">'
-         f'<span>{date_str} — {rname}</span>'
+         f'<span>{date_str} — {rname} &nbsp;<span style="background:{badge_col};color:#111;padding:1px 8px;border-radius:3px;font-size:12px">{basis.upper()}</span></span>'
          f'<span style="white-space:nowrap">{ik:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; Exp {ek:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; '
          f'Import ${ic:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Export ${ec:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
          f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Sub ${sub:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
@@ -1444,7 +1828,7 @@ def fivemin_html(fm, ds, rname, date_str):
         nt = iv.get('ic', 0) - iv.get('ec', 0)
         soc = iv.get('soc')
         curt = iv.get('curt', 0)
-        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{soc/41.92*100:.0f}</td>' if soc is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
+        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{soc/39.71*100:.0f}</td>' if soc is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         curt_cell = f'<td style="padding:2px 6px;text-align:right;color:#f99">{curt:.3f}</td>' if curt else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{iv["time"]}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{iv.get("tou","")}</td>'
@@ -1469,8 +1853,8 @@ def hourly_html(fm, ds, rname, date_str):
     dr = ds.get(date_str, {}).get('retailers', {}).get(rname, {})
     tot = ivs[-1] if ivs else {}
     if dr:
-        ik = ds[date_str].get('totalImport', tot.get('ik', 0))
-        ek = ds[date_str].get('totalExport', tot.get('ek', 0))
+        ik = tot.get('ik', ds[date_str].get('totalImport', 0))
+        ek = tot.get('ek', ds[date_str].get('totalExport', 0))
         ic = dr.get('import', tot.get('ic', 0))
         ec = dr.get('export', tot.get('ec', 0))
         dsc = dr.get('dsc', tot.get('dsc', 0))
@@ -1487,17 +1871,21 @@ def hourly_html(fm, ds, rname, date_str):
     for iv in ivs:
         if iv.get('time') == 'TOTAL': continue
         h = iv['time'][:2]
-        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', ''), 'fit_counts': {}})
+        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', ''), 'fit_counts': {}, 'last_soc': None})
         hours[h]['ik'] += iv['ik']
         hours[h]['ek'] += iv['ek']
         hours[h]['ic'] += iv['ic']
         hours[h]['ec'] += iv['ec']
         hours[h]['count'] += 1
+        if iv.get('soc') is not None:
+            hours[h]['last_soc'] = iv['soc']
         ft = iv.get('fit', '')
         hours[h]['fit_counts'][ft] = hours[h]['fit_counts'].get(ft, 0) + 1
 
+    basis = d.get('basis', 'optimised')
+    badge_col = '#4CAF50' if basis == 'optimised' else '#fc8'
     hdr = (f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#151515;color:#aaa;font-size:14px;font-weight:bold;border-bottom:1px solid #222">'
-           f'<span>{date_str} — {rname}</span>'
+           f'<span>{date_str} — {rname} &nbsp;<span style="background:{badge_col};color:#111;padding:1px 8px;border-radius:3px;font-size:12px">{basis.upper()}</span></span>'
            f'<span style="white-space:nowrap">{ik:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; Exp {ek:.2f} kWh &nbsp;&nbsp;|&nbsp;&nbsp; '
            f'Import ${ic:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Export ${ec:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
            f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Sub ${sub:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
@@ -1505,6 +1893,7 @@ def hourly_html(fm, ds, rname, date_str):
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
     t += '<th style="padding:4px 6px;text-align:left">Hour</th><th style="padding:4px 6px;text-align:left">TOU</th>'
     t += '<th style="padding:4px 6px;text-align:left">FIT</th>'
+    t += '<th style="padding:4px 6px;text-align:right">SOC %</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Avg Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Avg Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
@@ -1516,9 +1905,11 @@ def hourly_html(fm, ds, rname, date_str):
         avg_er = hv['ec'] / hv['ek'] if hv['ek'] > 0 else 0
         label = f'{h}:00-{int(h)+1}:00'
         dom_fit = max(hv['fit_counts'], key=hv['fit_counts'].get) if hv['fit_counts'] else ''
+        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{hv["last_soc"]/39.71*100:.0f}</td>' if hv['last_soc'] is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{label}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{hv["tou"]}</td>'
               f'<td style="padding:2px 6px;color:#fc8">{dom_fit}</td>'
+              f'{soc_cell}'
               f'<td style="padding:2px 6px;text-align:right;color:#8cf">{hv["ik"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#fc8">{hv["ek"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_ir:.4f}</td>'
@@ -1577,11 +1968,25 @@ var st=document.getElementById('optStatus');if(st)st.textContent=s.optimise_all?
 });
 }
 function toggleOptimise(){
-var el=document.getElementById('optimiseAll');if(!el)return;
-el.disabled=true;
-fetch('/api/optimise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:el.checked})})
-.then(function(){location.reload()})
-.catch(function(){el.disabled=false});
+ var el=document.getElementById('optimiseAll');if(!el)return;
+ el.disabled=true;
+ var st=document.getElementById('optStatus');if(st)st.textContent='(computing\u2026)';
+ fetch('/api/optimise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:el.checked})})
+ .then(function(){refreshReports(el,st);})
+ .catch(function(){el.disabled=false;if(st)st.textContent='(error)';});
+}
+// Reload the report iframes in place so the current view (active subtab,
+// selected retailer/date) is preserved when the optimise flag changes.
+function refreshReports(el,st){
+ var paths=['seasonal-report','monthly-report','daily-report','5min-detail','hourly-detail'];
+ document.querySelectorAll('iframe').forEach(function(f){
+  if(!f.src)return;
+  for(var i=0;i<paths.length;i++){
+   if(f.src.indexOf(paths[i])>=0){ f.src=f.src+(f.src.indexOf('?')>=0?'&':'?')+'_='+Date.now(); break; }
+  }
+ });
+ el.disabled=false;
+ if(st)st.textContent=el.checked?'(optimised)':'';
 }
 loadOptimise();
 </script>
@@ -1602,10 +2007,10 @@ _REPORTS_HTML = '''<div class=subtabs>
 </div>
 <div class=subtab-content id=sub-daily>
 <div class=report-controls>
-<label>From <input type=date id=fDate onchange=loadDaily()></label>
-<label>To <input type=date id=tDate onchange=loadDaily()></label>
-<label>Days <input type=number id=daysNum value=90 min=1 max=365 onchange=loadDaily()></label>
-<label>Billing Period <select id=bpSel onchange=loadDaily()><option value="">All</option></select></label>
+<label>From <input type=date id=fDate oninput=loadDaily() onchange=loadDaily()></label>
+<label>To <input type=date id=tDate oninput=loadDaily() onchange=loadDaily()></label>
+<label>Days <input type=number id=daysNum value=90 min=1 max=365 oninput=loadDaily() onchange=loadDaily()></label>
+<label>Billing Period <select id=bpSel oninput=loadDaily() onchange=loadDaily()><option value="">All</option></select></label>
 </div>
 <div style=flex:1><iframe id=dailyFrame src=/daily-report?days=90 style="width:100%;height:100%;border:none;background:#0d0d0d"></iframe></div>
 </div>
@@ -1678,10 +2083,14 @@ document.getElementById('hourlyFrame').src='/hourly-detail?retailer='+encodeURIC
 }
 function loadDaily(){
 var f=document.getElementById('fDate').value,t=document.getElementById('tDate').value,d=document.getElementById('daysNum').value,b=document.getElementById('bpSel').value;
-var p=[];
-if(b){p.push('bp='+b)}
-else{if(f)p.push('from='+f);if(t)p.push('to='+t);if(!f&&!t)p.push('days='+d);}
-document.getElementById('dailyFrame').src='/daily-report?'+p.join('&');
+ var p=[];
+ if(b){p.push('bp='+b)}
+ else{
+   if(f)p.push('from='+f);
+   if(t)p.push('to='+t);
+   if(!f&&!t)p.push('days='+d);
+ }
+ document.getElementById('dailyFrame').src='/daily-report?'+p.join('&');
 }
 function bpKey(dt,bd){
 var mo=parseInt(dt.substring(5,7)),da=parseInt(dt.substring(8,10)),yr=parseInt(dt.substring(0,4));
@@ -1694,10 +2103,9 @@ fetch('/api/daily-data').then(function(r){return r.json()}).then(function(data){
 var sel=document.getElementById('bpSel'),found={},bda=4;
 Object.keys(data).sort().reverse().forEach(function(d){
 var k=bpKey(d,bda);found[k]=true});
-Object.keys(found).sort().reverse().forEach(function(k){
-var o=document.createElement('option');o.value=k;o.textContent=k;
-if(sel.options.length==1||k>sel.options[1].value)sel.insertBefore(o,sel.options[1]);
-else sel.appendChild(o)});
+ Object.keys(found).sort().reverse().forEach(function(k){
+   var o=document.createElement('option');o.value=k;o.textContent=k;
+   sel.appendChild(o)});
 })}
 loadBillingPeriods();
 </script>'''
@@ -1801,6 +2209,9 @@ _CFG_FIELDS = [
     ('billing_day', 'Billing Day', False),
     ('pea_base', 'PEA Base', False),
     ('pea_override', 'PEA Override', False),
+    ('var_buy', 'Var Buy $/kWh', False),
+    ('var_sell', 'Var Sell $/kWh', False),
+    ('hyb_buy', 'Hyb Buy AEMO', False),
     ('glo_rebate', 'Glo Rebate', True),
     ('energymadeeasy_planid', 'Plan ID', False),
     ('bat_cap', 'Bat Cap kWh', False),
@@ -2000,7 +2411,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/api/chart-data':
             self._json(cd)
         elif path == '/api/settings':
-            self._json({'optimise_all': OPTIMISE_ALL})
+            self._json({'optimise_all': OPTIMISE_ALL, 'feasibility_guard': FEASIBILITY_GUARD})
         elif path == '/api/retailer-config':
             try:
                 raw = _read_config_raw(CONFIG_PATH)
@@ -2012,7 +2423,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({'error': 'Not found', 'paths': ['/','/api/status','/daily-report','/monthly-report','/seasonal-report','/5min-detail','/hourly-detail','/api/daily-data','/api/retailers','/api/chart-data','/api/retailer-config','/api/retailer-config/save']}, 404)
     
     def do_POST(self):
-        global OPTIMISE_ALL
+        global OPTIMISE_ALL, FEASIBILITY_GUARD
         parsed = urlparse(self.path); path = parsed.path
         if path == '/api/retailer-config/save':
             content_len = int(self.headers.get('Content-Length', 0))
@@ -2042,9 +2453,26 @@ class Handler(BaseHTTPRequestHandler):
                 OPTIMISE_ALL = bool(on)
                 _cache['data_hash'] = ''
                 log.info(f'Optimise-all set to {bool(on)}, cache invalidated')
+                ensure_computed(wait=True)
+                log.info('Recompute finished for optimise toggle')
                 self._json({'optimise_all': bool(on)})
             except Exception as e:
                 log.error(f'Optimise toggle failed: {e}')
+                self._json({'error': str(e)}, 500)
+        elif path == '/api/feasibility-guard':
+            content_len = int(self.headers.get('Content-Length', 0))
+            body_raw = self.rfile.read(content_len) if content_len > 0 else b''
+            try:
+                on = json.loads(body_raw).get('on', not FEASIBILITY_GUARD)
+                save_settings({'feasibility_guard': bool(on)})
+                FEASIBILITY_GUARD = bool(on)
+                _cache['data_hash'] = ''
+                log.info(f'Feasibility guard set to {bool(on)}, cache invalidated')
+                ensure_computed(wait=True)
+                log.info('Recompute finished for feasibility-guard toggle')
+                self._json({'feasibility_guard': bool(on)})
+            except Exception as e:
+                log.error(f'Feasibility guard toggle failed: {e}')
                 self._json({'error': str(e)}, 500)
         else:
             self._json({'error': 'POST not supported on ' + path}, 404)
