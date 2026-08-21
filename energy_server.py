@@ -640,14 +640,28 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         fund = (sum(grid_def) + sum(grid_exp)) / eff
         fund_rem = fund
         soc_g = start_soc
+        # Free-import top-up: where the retailer provides a free/cheap import window
+        # (off_limit allowance), use it to fill the battery to 100% during that window
+        # so it enters the evening at full SOC. This covers the shortfall solar could
+        # not supply by the end of the solar day (self-sufficiency / resilience) — the
+        # grid import is free (rate 0 within the off_limit pool), so there is no cost
+        # penalty for arriving at 3pm at full charge.
+        free_pool = off_limit if off_limit > 0 else 0.0
         for i in range(n):
             soc_g = min(soc_max, soc_g + solar_chg[i] * eff)
-            if buy[i] > cheap_rate + 1e-12:
-                continue
-            if fund_rem <= 0:
-                break
-            # AC-side import limit: battery charge + net load <= ac_cap.
+            in_free = buy[i] <= cheap_rate + 1e-12
             chg_room = max(0.0, ac_wh - max(0.0, load[i] - solar[i]))
+            if in_free and free_pool > 1e-9:
+                tk = min(chg_rate * taper_rate(soc_g), chg_room, free_pool,
+                         max(0.0, (soc_max - soc_g) / eff))
+                tk = max(0.0, tk)
+                grid_chg[i] += tk
+                soc_g += tk * eff
+                free_pool -= tk
+                continue
+            if not in_free or fund_rem <= 0:
+                continue
+            # AC-side import limit: battery charge + net load <= ac_cap.
             tk = min(chg_rate * taper_rate(soc_g), fund_rem, chg_room,
                      max(0.0, (soc_max - soc_g) / eff))
             tk = max(0.0, tk)
@@ -1321,10 +1335,21 @@ def calculate_costs(intervals, retailers):
                         if in_window(h, r.get('sp_fit_s', 0), r.get('sp_fit_e', 0)): er = r.get('sp_fit', 0); fit = 'Sp '
                         elif in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)): er = r.get('pk_fit', 0); fit = 'Pk '
                         elif in_window(h, r.get('off_fit_s', 0), r.get('off_fit_e', 0)): er = r.get('off_fit', 0); fit = 'Off'
+                    spfs = r.get('sp_fit_s', 0); spfe = r.get('sp_fit_e', 0)
+                    if in_window(h, spfs, spfe):
+                        fit_win = 'Sp'
+                    elif in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)):
+                        fit_win = 'Pk'
+                    elif in_window(h, r.get('off_fit_s', 0), r.get('off_fit_e', 0)):
+                        fit_win = 'Off'
+                    else:
+                        fit_win = 'Sho'
+                    sp_ex = bool(in_window(h, spfs, spfe) and r.get('sp_limit', 0) and spu >= r.get('sp_limit', 0))
                     ic = i_kwh * ir; ec = e_kwh * er
                 elif r['model'] in ('variable', 'variable_optimised'):
                     tou = 'Wsh'; ir = iv['aemo'] + r.get('sh_pk', 0)
                     er = iv['aemo'] * r.get('off_fit', 0); fit = 'Wsh'
+                    fit_win = 'Wsh'; sp_ex = False
                     ic = i_kwh * ir; ec = e_kwh * er
                 else:
                     tou = 'Flat'; ir = r.get('sh_pk', 0.2) + pea
@@ -1337,9 +1362,19 @@ def calculate_costs(intervals, retailers):
                             fit = 'Sp '
                         else:
                             er = r.get('sp_fit2', 0); fit = 'Sp2'
+                    spfs = r.get('sp_fit_s', 0); spfe = r.get('sp_fit_e', 0)
+                    if in_window(h, spfs, spfe):
+                        fit_win = 'Sp'
+                    elif in_window(h, r.get('pk_fit_s', 0), r.get('pk_fit_e', 0)):
+                        fit_win = 'Pk'
+                    elif in_window(h, r.get('off_fit_s', 0), r.get('off_fit_e', 0)):
+                        fit_win = 'Off'
+                    else:
+                        fit_win = 'Sho'
+                    sp_ex = bool(in_window(h, spfs, spfe) and r.get('sp_limit', 0) and spu >= r.get('sp_limit', 0))
                     ic = i_kwh * ir; ec = e_kwh * er
                 tic += ic; tec += ec
-                o = {'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
+                o = {'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'fit_win': fit_win, 'sp_ex': sp_ex, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
                      'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)}
                 if sday:
                     o['soc'] = round(sday[iv_idx]['soc'], 2)
@@ -1894,20 +1929,21 @@ def hourly_html(fm, ds, rname, date_str):
         net = tot.get('net', 0)
     sub = dr.get('sub', tot.get('sub', 0))
 
-    hours = {}
+    buckets = {}
     for iv in ivs:
         if iv.get('time') == 'TOTAL': continue
-        h = iv['time'][:2]
-        hours.setdefault(h, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0, 'tou': iv.get('tou', ''), 'fit_counts': {}, 'last_soc': None})
-        hours[h]['ik'] += iv['ik']
-        hours[h]['ek'] += iv['ek']
-        hours[h]['ic'] += iv['ic']
-        hours[h]['ec'] += iv['ec']
-        hours[h]['count'] += 1
+        hh, mm = iv['time'][:5].split(':'); hh = int(hh); mm = int(mm)
+        hk = f'{hh:02d}:{0 if mm < 30 else 30:02d}'
+        b = buckets.setdefault(hk, {'ik': 0.0, 'ek': 0.0, 'ic': 0.0, 'ec': 0.0, 'count': 0,
+                                    'fit_win': None, 'sp_ex': False, 'tou_counts': {}, 'fit_counts': {}, 'last_soc': None})
+        b['ik'] += iv['ik']; b['ek'] += iv['ek']; b['ic'] += iv['ic']; b['ec'] += iv['ec']; b['count'] += 1
         if iv.get('soc') is not None:
-            hours[h]['last_soc'] = iv['soc']
-        ft = iv.get('fit', '')
-        hours[h]['fit_counts'][ft] = hours[h]['fit_counts'].get(ft, 0) + 1
+            b['last_soc'] = iv['soc']
+        fw = iv.get('fit_win')
+        if fw: b['fit_win'] = fw
+        if iv.get('sp_ex'): b['sp_ex'] = True
+        b['tou_counts'][iv.get('tou', '')] = b['tou_counts'].get(iv.get('tou', ''), 0) + 1
+        ft = iv.get('fit', ''); b['fit_counts'][ft] = b['fit_counts'].get(ft, 0) + 1
 
     basis = d.get('basis', 'optimised')
     badge_col = '#4CAF50' if basis == 'optimised' else '#fc8'
@@ -1918,31 +1954,36 @@ def hourly_html(fm, ds, rname, date_str):
            f'DSC ${dsc:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Sub ${sub:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; Rebate ${reb:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; '
            f'Net ${net:.2f}</span></div>')
     t = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#1a1a1a;color:white;position:sticky;top:0;z-index:1">'
-    t += '<th style="padding:4px 6px;text-align:left">Hour</th><th style="padding:4px 6px;text-align:left">TOU</th>'
+    t += '<th style="padding:4px 6px;text-align:left">Period</th><th style="padding:4px 6px;text-align:left">TOU</th>'
     t += '<th style="padding:4px 6px;text-align:left">FIT</th>'
     t += '<th style="padding:4px 6px;text-align:right">SOC %</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp kWh</th><th style="padding:4px 6px;text-align:right">Exp kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Avg Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Avg Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
     t += '<th style="padding:4px 6px;text-align:right">Net $</th></tr></thead><tbody>'
-    for h in sorted(hours.keys(), key=int):
-        hv = hours[h]
-        inet = hv['ic'] - hv['ec']
-        avg_ir = hv['ic'] / hv['ik'] if hv['ik'] > 0 else 0
-        avg_er = hv['ec'] / hv['ek'] if hv['ek'] > 0 else 0
-        label = f'{h}:00-{int(h)+1}:00'
-        dom_fit = max(hv['fit_counts'], key=hv['fit_counts'].get) if hv['fit_counts'] else ''
-        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{hv["last_soc"]/39.71*100:.0f}</td>' if hv['last_soc'] is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
+    for hk in sorted(buckets.keys()):
+        bv = buckets[hk]
+        bh, bm = map(int, hk.split(':'))
+        eh = bh + (1 if bm == 30 else 0); em = 30 if bm == 0 else 0
+        label = f'{hk}-{eh:02d}:{em:02d}'
+        inet = bv['ic'] - bv['ec']
+        avg_ir = bv['ic'] / bv['ik'] if bv['ik'] > 0 else 0
+        avg_er = bv['ec'] / bv['ek'] if bv['ek'] > 0 else 0
+        fit_label = bv['fit_win'] or (max(bv['fit_counts'], key=bv['fit_counts'].get) if bv['fit_counts'] else '')
+        if bv['sp_ex'] and fit_label:
+            fit_label = '*' + fit_label
+        dom_tou = max(bv['tou_counts'], key=bv['tou_counts'].get) if bv['tou_counts'] else ''
+        soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{bv["last_soc"]/39.71*100:.0f}</td>' if bv['last_soc'] is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         t += (f'<tr><td style="padding:2px 6px;color:#aaa">{label}</td>'
-              f'<td style="padding:2px 6px;color:#ccc">{hv["tou"]}</td>'
-              f'<td style="padding:2px 6px;color:#fc8">{dom_fit}</td>'
+              f'<td style="padding:2px 6px;color:#ccc">{dom_tou}</td>'
+              f'<td style="padding:2px 6px;color:#fc8">{fit_label}</td>'
               f'{soc_cell}'
-              f'<td style="padding:2px 6px;text-align:right;color:#8cf">{hv["ik"]:.3f}</td>'
-              f'<td style="padding:2px 6px;text-align:right;color:#fc8">{hv["ek"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#8cf">{bv["ik"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#fc8">{bv["ek"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_ir:.4f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#888">{avg_er:.4f}</td>'
-              f'<td style="padding:2px 6px;text-align:right;color:#ff8a65">{hv["ic"]:.3f}</td>'
-              f'<td style="padding:2px 6px;text-align:right;color:#8fbc8f">{hv["ec"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#ff8a65">{bv["ic"]:.3f}</td>'
+              f'<td style="padding:2px 6px;text-align:right;color:#8fbc8f">{bv["ec"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:{"#ff5252" if inet>=0 else "#4CAF50"}">{inet:.3f}</td></tr>')
     t += '</tbody></table></div>'
     return hdr + t
@@ -2023,7 +2064,7 @@ _REPORTS_HTML = '''<div class=subtabs>
 <button class=active onclick="switchSub(this,'sub-seasonal')">Seasonal</button>
 <button onclick="switchSub(this,'sub-monthly')">Monthly</button>
 <button onclick="switchSub(this,'sub-daily')">Daily</button>
-<button onclick="switchSub(this,'sub-hourly')">Hourly</button>
+<button onclick="switchSub(this,'sub-hourly')">Half-hour</button>
 <button onclick="switchSub(this,'sub-5min')">5-Min</button>
 </div>
 <div class=subtab-content id=sub-seasonal style="display:flex">
