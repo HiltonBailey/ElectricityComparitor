@@ -116,6 +116,69 @@ def build_synthetic_csv(path):
 
 
 # ----------------------------------------------------------------------------
+# Measured-floor invariant helper
+# ----------------------------------------------------------------------------
+
+def measured_net(es, day_ivs, r):
+    """Net cost ($-style) of a day's MEASURED i_kwh/e_kwh under retailer r.
+
+    Mirrors energy_server's _fixed_tou_interval / _finalize so it matches the
+    server's cost basis. Used to assert the optimised total is never worse
+    than the measured total (the 'measured floor')."""
+    model = r.get('model')
+    d = {'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0, 'spExportKwh': 0.0,
+         'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0, 'spExportUsed': 0.0,
+         'freeUsage': 0.0, 'hr18': 0.0, 'hr19': 0.0, 'hr20': 0.0, 'import': 0.0, 'export': 0.0}
+    for iv in day_ivs:
+        h = iv['h']; ti = iv['i_kwh']; ek = iv['e_kwh']
+        # mirror _accumulate's hr18/19/20 tracking (used by the glo-rebate)
+        if 18 <= h < 19:
+            d['hr18'] += ti
+        elif 19 <= h < 20:
+            d['hr19'] += ti
+        elif 20 <= h < 21:
+            d['hr20'] += ti
+        if model in ('fixed_tou', 'fixed_tou_real'):
+            es._fixed_tou_interval(d, r, h, ti, ek)
+        elif model == 'hybrid':
+            rate = float(r.get('sh_pk', 0.2))
+            d['import'] += ti * rate
+            if es.in_window(h, float(r.get('sp_fit_s', 17.5)), float(r.get('sp_fit_e', 21.5))) and float(r.get('sp_limit', 0)) > 0:
+                rem = float(r.get('sp_limit', 0)) - d['spExportUsed']
+                if rem > 0:
+                    sp = min(ek, rem); fb = ek - sp; d['spExportUsed'] += sp
+                    d['export'] += sp * float(r.get('sp_fit', 0)); d['spExportKwh'] += sp
+                    if fb > 0:
+                        d['export'] += fb * float(r.get('sp_fit2', 0)); d['shExportKwh'] += fb
+                else:
+                    d['export'] += ek * float(r.get('sp_fit2', 0)); d['shExportKwh'] += ek
+            else:
+                d['export'] += ek * float(r.get('off_fit', 0))
+        else:  # variable / variable_optimised
+            d['import'] += ti * (iv['aemo'] + float(r.get('sh_pk', 0)))
+            d['export'] += ek * iv['aemo'] * float(r.get('off_fit', 0))
+    if model in ('fixed_tou', 'fixed_tou_real'):
+        fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+        if not (fs or fe):
+            off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
+            off_rate = float(r.get('off_pk', 0))
+            if off_rate == 0 and float(r.get('off_limit', 0)) > 0:
+                off_rate = float(r.get('sh_pk', 0))
+            imp = (off_bal * off_rate + d['shKwh'] * float(r.get('sh_pk', 0))
+                   + d['pkKwh'] * float(r.get('pk_pk', 0)) + d['evKwh'] * float(r.get('ev_pk', 0)))
+        else:
+            imp = d['import']
+        exp = (d['spExportKwh'] * float(r.get('sp_fit', 0)) + d['pkExportKwh'] * float(r.get('pk_fit', 0))
+               + d['shExportKwh'] * float(r.get('sh_fit', 0)) + d['offExportKwh'] * float(r.get('off_fit', 0)))
+    else:
+        imp = d['import']; exp = d['export']
+    reb = 0.0
+    if float(r.get('glo_rebate', '0')) > 0 and d['hr18'] < 0.1 and d['hr19'] < 0.1 and d['hr20'] < 0.1:
+        reb = 1.0
+    return imp - exp + float(r.get('dsc', 0)) + float(r.get('sub', 0)) - reb
+
+
+# ----------------------------------------------------------------------------
 # Check harness
 # ----------------------------------------------------------------------------
 
@@ -181,6 +244,26 @@ def level1(csv_path, config_path):
                 assert 0 <= te <= 80, f"{d}: implausible export {te:.1f} kWh"
                 assert 0 < ts <= 60, f"{d}: implausible solar {ts:.1f} kWh"
                 assert 0 < tl <= 60, f"{d}: implausible load {tl:.1f} kWh"
+
+            # Measured-floor invariant: for every COMPLETE day, the optimised
+            # (reported) net must be <= the measured (actual) net. This is the
+            # exact guarantee the production fix enforces — if it ever fails,
+            # the optimiser produced a worse-than-measured result.
+            _by_date = {}
+            for iv in intervals:
+                _by_date.setdefault(iv['date'], []).append(iv)
+            for date, ds in daily_summary.items():
+                if not ds.get('complete'):
+                    continue
+                day = _by_date.get(date, [])
+                if len(day) < 288:
+                    continue
+                for r in retailers:
+                    mn = measured_net(es, day, r)
+                    rep = ds['retailers'].get(r['name'], {}).get('net')
+                    assert rep is not None, f"{date} {r['name']}: no net"
+                    assert rep <= mn + 0.02, \
+                        f"{date} {r['name']}: optimised {rep:.2f} > measured {mn:.2f}"
         check(f'calculate_costs + reports (OPTIMISE_ALL={opt})', run)
 
     # exercise HA SOC fetch guard (must not raise even with no network)

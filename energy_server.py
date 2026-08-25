@@ -936,6 +936,7 @@ def _dispatch_battery_agl(r, intervals, pea_by_period, bat=None):
     off_pk = float(r.get('off_pk', 0))       # off-peak import rate (export gating)
     sp_fit_rate = float(r.get('sp_fit', 0))
     pk_fit_rate = float(r.get('pk_fit', 0))
+    charge_start = 11.0   # off-peak grid top-up window start (was 8.0)
 
     by_date = {}
     for iv in intervals:
@@ -1011,13 +1012,17 @@ def _dispatch_battery_agl(r, intervals, pea_by_period, bat=None):
             solar_chg[i] = c; soc_solar[i] = s
 
         # --- grid top-up: latest possible, respecting AC limit & capacity ---
-        in_day_idx = [j for j, iv in enumerate(day) if 8.0 <= iv['h'] < peak_s]
+        # Fill only within the off-peak grid window (11:00-15:00) and only by the
+        # amount short so the pack reaches the target SOC (full for history, >=90%
+        # for the current day) by 17:00, solar surplus already counted above.
+        in_day_idx = [j for j, iv in enumerate(day) if charge_start <= iv['h'] < peak_s]
         last_day_idx = in_day_idx[-1] if in_day_idx else -1
         soc_after_solar = soc_solar[last_day_idx] if last_day_idx >= 0 else start_soc
         # charge is only `eff` efficient, so the grid ENERGY needed (charge-side)
         # is the stored deficit divided by eff; the back-fill places charge-energy
         # amounts, so keep `deficit` in charge-energy units to avoid under-filling.
-        deficit = max(0.0, (cap - soc_after_solar) / eff)   # grid charge kWh to peak_s
+        target_soc = cap if date != last_date else 0.90 * cap
+        deficit = max(0.0, (target_soc - soc_after_solar) / eff)   # grid charge kWh to target
         grid_plan = [0.0] * n
         if deficit > 1e-9 and in_day_idx:
             remaining = deficit
@@ -1278,7 +1283,7 @@ def calculate_costs(intervals, retailers):
                     if 18 <= h < 19: d['hr18'] += ti
                     elif 19 <= h < 20: d['hr19'] += ti
                     elif 20 <= h < 21: d['hr20'] += ti
-                    if r['model'] == 'fixed_tou':
+                    if r['model'] in ('fixed_tou', 'fixed_tou_real'):
                         _fixed_tou_interval(d, r, h, ti, ek)
                     elif r['model'] == 'hybrid':
                         bp = int(r.get('billing_day', 4))
@@ -1307,6 +1312,57 @@ def calculate_costs(intervals, retailers):
                         d['export'] += ek * iv['aemo'] * r.get('off_fit', 0)
         return adata
 
+    # ── Measured floor ────────────────────────────────────────────────────────
+    # The optimised dispatch must NEVER cost more than the measured (actual)
+    # import/export for the same day. For any COMPLETE day where the optimised
+    # net is worse than the measured net, substitute the measured i_kwh/e_kwh
+    # (and flag it via used_meas so the 5-min detail labels it "measured").
+    used_meas = set()
+
+    def _net(d, r):
+        model = r.get('model')
+        dsc = float(r.get('dsc', 0)); sub = float(r.get('sub', 0))
+        reb = 0.0
+        if float(r.get('glo_rebate', '0')) > 0 and d.get('hr18', 0) < 0.1 and d.get('hr19', 0) < 0.1 and d.get('hr20', 0) < 0.1:
+            reb = 1.0
+        if model in ('fixed_tou', 'fixed_tou_real'):
+            fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
+            if not (fs or fe):
+                off_bal = max(0.0, d.get('offKwh', 0) - d.get('freeUsage', 0))
+                off_rate = float(r.get('off_pk', 0))
+                if off_rate == 0 and float(r.get('off_limit', 0)) > 0:
+                    off_rate = float(r.get('sh_pk', 0))
+                imp = (off_bal * off_rate + d.get('shKwh', 0) * float(r.get('sh_pk', 0))
+                       + d.get('pkKwh', 0) * float(r.get('pk_pk', 0)) + d.get('evKwh', 0) * float(r.get('ev_pk', 0)))
+            else:
+                imp = d.get('import', 0)
+            exp = (d.get('spExportKwh', 0) * float(r.get('sp_fit', 0))
+                   + d.get('pkExportKwh', 0) * float(r.get('pk_fit', 0))
+                   + d.get('shExportKwh', 0) * float(r.get('sh_fit', 0))
+                   + d.get('offExportKwh', 0) * float(r.get('off_fit', 0)))
+        else:
+            imp = d.get('import', 0); exp = d.get('export', 0)
+        return imp - exp + dsc + sub - reb
+
+    measured_sims = {r['name']: {} for r in retailers}
+    for date, day_ivs in iv_by_date.items():
+        if len(day_ivs) < 288:
+            continue
+        for r in retailers:
+            measured_sims[r['name']][date] = [
+                {'sim_i': iv['i_kwh'], 'sim_e': iv['e_kwh'], 'curt': 0.0, 'soc': 0.0, 'chg': 0.0, 'dis': 0.0}
+                for iv in day_ivs]
+    _opt_data = _accumulate(sims)
+    _meas_data = _accumulate(measured_sims)
+    for date in _opt_data:
+        if len(iv_by_date.get(date, [])) < 288:
+            continue
+        for r in retailers:
+            on = _net(_opt_data[date][r['name']], r)
+            mn = _net(_meas_data[date][r['name']], r)
+            if on > mn + 1e-9:
+                sims[r['name']][date] = measured_sims[r['name']][date]
+                used_meas.add((date, r['name']))
     daily_data = _accumulate(sims)
 
     def _forecast_current_day(iv_by_date, retailers, sims, pea_by_period, bat):
@@ -1465,7 +1521,7 @@ def calculate_costs(intervals, retailers):
         forecast_remainder[proj_info['date']] = proj_info['remainder']
 
     def _finalize(d, r, date_str):
-        if r['model'] == 'fixed_tou':
+        if r['model'] in ('fixed_tou', 'fixed_tou_real'):
             fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
             if not (fs or fe):
                 off_bal = max(0.0, d['offKwh'] - d.get('freeUsage', 0))
@@ -1491,8 +1547,6 @@ def calculate_costs(intervals, retailers):
             reb = 1.00
         else: reb = 0.0
         d['gloRebate'] = reb; d['net'] = round(ri - re + rd + rs - reb, 2)
-
-    used_meas = set()
 
     daily_summary = {}; chart_data = []; five_min_detail = {}
     
