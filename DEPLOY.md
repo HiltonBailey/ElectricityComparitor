@@ -9,6 +9,32 @@ Run once: `bash deploy.sh`
 
 ---
 
+## 0. MANDATORY: Regression Test Before ANY Deployment
+
+**Any change to `energy_server.py` MUST pass `regression_test.py` before it is
+deployed to the live server.** This is required — not optional.
+
+The test catches two dangerous classes of regression that a normal
+syntax/lint check misses (both have shipped as production bugs before):
+1. **Runtime scoping bugs** (e.g. `UnboundLocalError: 'bat'` / `'r'`) that only
+   surface when `calculate_costs` actually executes — and specifically when
+   `OPTIMISE_ALL` is toggled both on AND off.
+2. **Physically impossible energy totals** (e.g. a projected day showing
+   218.8 kWh import / 115.6 kWh export because the remainder was summed across
+   all retailers — an 8× inflation).
+
+Run it from the repo root:
+
+```bash
+python3 regression_test.py                 # synthetic CSV + repo retailer_config.csv
+python3 regression_test.py --csv /path/5min.csv   # optionally use a real CSV (full scale)
+```
+
+All checks must PASS (exit code 0) before deploying. If it fails, fix the code
+— do NOT deploy around it.
+
+---
+
 ## 1. Node-RED: Gap-Filling Flow
 
 The flow file `node_red_flow.json` contains the full export. Only tab `tab_energy_retailer_comparison` is deployed.

@@ -31,6 +31,7 @@ HA SMB share (192.168.50.100:/share)
 
 ## Deployment
 ### Python Server (192.168.50.161:8080)
+- **MANDATORY**: Run `python3 regression_test.py` from the repo root and confirm all checks PASS before deploying ANY change to `energy_server.py` (catches runtime scoping bugs and impossible energy totals). See DEPLOY.md §0.
 - Runs as `energy-server.service` on container 104 (n8n LXC)
 - ExecStart: `/opt/energy_server.sh` → `python3 /opt/energy_server.py --csv /mnt/ha_share/... --config /opt/energy_data/retailer_config.csv --port 8080`
 - Deploy: `bash deploy.sh` — seeds config via `POST /api/retailer-config/save`

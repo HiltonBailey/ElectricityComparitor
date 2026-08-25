@@ -271,6 +271,8 @@ def load_csv_rows(path):
                 'aemo_price': _f(line[11]),
                 'load_reg': _f(line[8]),
                 'solar_reg': _f(line[13]),
+                'bat_charge_e': _f(line[6]),
+                'bat_discharge_e': _f(line[7]),
             })
     return rows
 
@@ -278,6 +280,8 @@ def extract_intervals(rows):
     intervals = []
     prev_imp = prev_exp = 0.0
     prev_load = prev_solar = 0.0
+    prev_bat_chg = 0.0
+    prev_bat_dis = 0.0
     prev_date = None
     vals = []
     SPK_KWH = 8.0
@@ -292,10 +296,13 @@ def extract_intervals(rows):
         except: continue
         date = dt.strftime('%Y-%m-%d')
         vals.append((dt, date, row['load_reg'], row['solar_reg'],
-                     i_kwh, e_kwh, ci, ce, row['aemo_price']))
-    for n, (dt, date, cl, cs, i_kwh, e_kwh, ci, ce, aemo) in enumerate(vals):
+                     i_kwh, e_kwh, ci, ce, row['aemo_price'],
+                     row['bat_charge_e'], row['bat_discharge_e']))
+    for n, (dt, date, cl, cs, i_kwh, e_kwh, ci, ce, aemo, bc, bd) in enumerate(vals):
         nxt_load = vals[n + 1][2] if n + 1 < len(vals) else None
         nxt_solar = vals[n + 1][3] if n + 1 < len(vals) else None
+        nxt_bc = vals[n + 1][9] if n + 1 < len(vals) else None
+        nxt_bd = vals[n + 1][10] if n + 1 < len(vals) else None
         # Cumulative counters carry across midnight; a genuine reset drops back
         # near zero AND stays low on the next sample. Spurious single-sample
         # dips (glitches) are ignored: prev is kept so the real total counts.
@@ -337,6 +344,40 @@ def extract_intervals(rows):
         else:
             s_kwh = max(0.0, cs - prev_solar)
             prev_solar = cs
+        # Battery charge/discharge are cumulative counters (kWh); delta them to
+        # per-interval energy with the same reset/spike handling as load/solar.
+        if bc < prev_bat_chg:
+            if bc <= 5.0 and (nxt_bc is None or (nxt_bc <= 5.0 and nxt_bc < prev_bat_chg)):
+                prev_bat_chg = 0.0
+                bchg = bc
+                prev_bat_chg = bc
+            else:
+                bchg = 0.0
+        elif bc - prev_bat_chg > SPK_KWH:
+            if nxt_bc is not None and nxt_bc < bc:
+                bchg = 0.0
+            else:
+                bchg = 0.0
+                prev_bat_chg = bc
+        else:
+            bchg = max(0.0, bc - prev_bat_chg)
+            prev_bat_chg = bc
+        if bd < prev_bat_dis:
+            if bd <= 5.0 and (nxt_bd is None or (nxt_bd <= 5.0 and nxt_bd < prev_bat_dis)):
+                prev_bat_dis = 0.0
+                bdis = bd
+                prev_bat_dis = bd
+            else:
+                bdis = 0.0
+        elif bd - prev_bat_dis > SPK_KWH:
+            if nxt_bd is not None and nxt_bd < bd:
+                bdis = 0.0
+            else:
+                bdis = 0.0
+                prev_bat_dis = bd
+        else:
+            bdis = max(0.0, bd - prev_bat_dis)
+            prev_bat_dis = bd
         intervals.append({
             'pe': dt.strftime('%Y-%m-%d %H:%M:%S'), 'date': date,
             'time': dt.strftime('%H:%M:%S'),
@@ -344,12 +385,13 @@ def extract_intervals(rows):
             'i_kwh': i_kwh, 'e_kwh': e_kwh, 'cum_imp': ci, 'cum_exp': ce,
             'aemo': aemo,
             'load_kwh': l_kwh, 'solar_kwh': s_kwh,
+            'bat_chg_kwh': bchg, 'bat_dis_kwh': bdis,
         })
     return intervals
 
 # ─── Cost Calculator ─────────────────────────────────────────────────────────
 
-def _dispatch_battery(r, intervals, pea_by_period, bat=None):
+def _dispatch_battery(r, intervals, pea_by_period, bat=None, seed_soc=None):
     """Tariff-aware, day-level battery dispatch for ANY retailer model.
 
     Simulates how the battery would be run to get the most out of that retailer.
@@ -383,7 +425,7 @@ def _dispatch_battery(r, intervals, pea_by_period, bat=None):
         by_date.setdefault(iv['date'], []).append(iv)
 
     carry = bool(b.get('carry_soc', True))
-    start_soc = init_soc
+    start_soc = seed_soc if seed_soc is not None else init_soc
     results = {}
     for date in sorted(by_date):
         day = by_date[date]
@@ -731,6 +773,41 @@ def _dispatch_battery_realistic(r, intervals, pea_by_period, bat=None):
     return _dispatch_battery(r, intervals, pea_by_period, bat_real)
 
 
+def _fetch_battery_soc():
+    """Actual battery state-of-charge (fraction 0..1) from HA, else None.
+
+    Tries a list of candidate sensors (first valid wins). Values >1 are treated
+    as percent, values <=1 as a fraction. Overridable via BATTERY_SOC_SENSOR
+    (comma-separated entity ids)."""
+    import os
+    import json
+    import urllib.request
+    url = os.environ.get('HA_URL', 'http://192.168.50.100:8123')
+    token = os.environ.get('HA_TOKEN')
+    if not token:
+        return None
+    cands = os.environ.get('BATTERY_SOC_SENSOR')
+    if cands:
+        cands = [c.strip() for c in cands.split(',') if c.strip()]
+    else:
+        cands = ['sensor.foxmodbus_battery_soc',
+                 'sensor.electricity_tariffs_foxesscontrol_battery_soc',
+                 'sensor.emhass_battery_soc']
+    for ent in cands:
+        try:
+            req = urllib.request.Request(
+                f"{url}/api/states/{ent}",
+                headers={"Authorization": f"Bearer {token}"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                st = float(json.load(r)['state'])
+            if st < 0 or st > 100:
+                continue
+            return st / 100.0 if st > 1 else st
+        except Exception:
+            continue
+    return None
+
+
 def _fetch_solcast_today():
     """Total forecast solar for today (kWh) from the HA Solcast sensor, else None."""
     import json
@@ -752,7 +829,7 @@ def _fetch_solcast_today():
         return None
 
 
-def _dispatch_battery_variable(r, intervals, pea_by_period, bat=None):
+def _dispatch_battery_variable(r, intervals, pea_by_period, bat=None, seed_soc=None):
     """Spot-priced (Amber) battery dispatch: buy low / sell high on AEMO.
 
     Grid-charges the battery when the AEMO spot price is below `var_buy`, and
@@ -777,7 +854,7 @@ def _dispatch_battery_variable(r, intervals, pea_by_period, bat=None):
     for iv in intervals:
         by_date.setdefault(iv['date'], []).append(iv)
     carry = bool(b.get('carry_soc', True))
-    start_soc = init_soc
+    start_soc = seed_soc if seed_soc is not None else init_soc
     results = {}
     for date in sorted(by_date):
         day = by_date[date]
@@ -1158,8 +1235,8 @@ def calculate_costs(intervals, retailers):
             if r.get('realistic_dispatch'):
                 sims[r['name']] = _dispatch_battery_agl(r, intervals, pea_by_period,
                                                         _battery_spec(retailers))
+    bat = _battery_spec(retailers)
     if OPTIMISE_ALL:
-        bat = _battery_spec(retailers)
         for r in retailers:
             if r.get('realistic_dispatch'):
                 continue
@@ -1170,7 +1247,7 @@ def calculate_costs(intervals, retailers):
     else:
         for r in retailers:
             if r['model'] == 'variable_optimised':
-                sims[r['name']] = _dispatch_battery_variable(r, intervals, pea_by_period, _battery_spec(retailers))
+                sims[r['name']] = _dispatch_battery_variable(r, intervals, pea_by_period, bat)
 
     def _accumulate(sims_dict):
         adata = {}
@@ -1232,6 +1309,161 @@ def calculate_costs(intervals, retailers):
 
     daily_data = _accumulate(sims)
 
+    def _forecast_current_day(iv_by_date, retailers, sims, pea_by_period, bat):
+        """Project the incomplete (current) day to a full day: actuals-to-date
+        (measured, elapsed intervals) + an optimised best-case forecast of the
+        remainder (now -> 23:55), seeded from the actual battery SOC at 'now'.
+        Returns None if there is no incomplete day, else a dict with the
+        projected per-retailer daily dict, top-level actual/projected totals."""
+        inc = None
+        for ds, ivs in iv_by_date.items():
+            if len(ivs) < 288:
+                if inc is None or ds > inc:
+                    inc = ds
+        if inc is None:
+            return None
+        elapsed = list(iv_by_date[inc])
+        m = len(elapsed)
+        if m == 0 or m >= 288:
+            return None
+        cap = float(bat.get('bat_cap', 39.71)) if bat else 39.71
+        # Typical daily load profile = mean per-interval load across recent
+        # complete days (falls back to the elapsed average if none).
+        prof = [0.0] * 288
+        prof_imp = [0.0] * 288
+        prof_exp = [0.0] * 288
+        pdays = 0
+        for ds, ivs in iv_by_date.items():
+            if ds == inc or len(ivs) < 288:
+                continue
+            pdays += 1
+            for j, iv in enumerate(ivs[:288]):
+                prof[j] += iv.get('load_kwh', 0.0)
+                prof_imp[j] += iv.get('i_kwh', 0.0)
+                prof_exp[j] += iv.get('e_kwh', 0.0)
+        if pdays > 0:
+            prof = [p / pdays for p in prof]
+            prof_imp = [p / pdays for p in prof_imp]
+            prof_exp = [p / pdays for p in prof_exp]
+        else:
+            avg = (sum(iv.get('load_kwh', 0.0) for iv in elapsed) / m) if m else 0.0
+            prof = [avg] * 288
+            ai = (sum(iv.get('i_kwh', 0.0) for iv in elapsed) / m) if m else 0.0
+            ae = (sum(iv.get('e_kwh', 0.0) for iv in elapsed) / m) if m else 0.0
+            prof_imp = [ai] * 288
+            prof_exp = [ae] * 288
+        # Solar: bell-shaped intraday weight; total from Solcast (HA) with a
+        # clear-sky fallback that scales observed solar by the fraction of the
+        # solar-day weight already elapsed.
+        def _sw(j):
+            h = j / 12.0
+            return max(0.0, math.sin(math.pi * (h - 6) / 12.0)) if 6 <= h <= 18 else 0.0
+        w = [_sw(j) for j in range(288)]
+        w_elapsed = sum(w[:m]); w_rem = sum(w[m:]); w_all = sum(w)
+        actual_solar = sum(iv.get('solar_kwh', 0.0) for iv in elapsed)
+        actual_load = sum(iv.get('load_kwh', 0.0) for iv in elapsed)
+        actual_imp = sum(iv.get('i_kwh', 0.0) for iv in elapsed)
+        actual_exp = sum(iv.get('e_kwh', 0.0) for iv in elapsed)
+        solcast = _fetch_solcast_today()
+        if solcast and solcast > 0:
+            total_solar = float(solcast)
+        elif w_elapsed > 0 and w_all > 0:
+            total_solar = actual_solar / (w_elapsed / w_all)
+        else:
+            total_solar = actual_solar
+        rem_solar = max(0.0, total_solar - actual_solar)
+        # Build the remainder intervals (now+5min -> 23:55).
+        remainder_ivs = []
+        for j in range(m, 288):
+            hh = j // 12; mm = (j % 12) * 5
+            sv = (rem_solar * w[j] / w_rem) if w_rem > 0 else 0.0
+            remainder_ivs.append({
+                'date': inc, 'h': hh + mm / 60.0, 'time': f"{hh:02d}:{mm:02d}",
+                'i_kwh': 0.0, 'e_kwh': 0.0, 'load_kwh': prof[j],
+                'solar_kwh': sv, 'aemo': 0.0,
+                'bat_charge': 0.0, 'bat_discharge': 0.0,
+            })
+        # Seed the forecast at the ACTUAL measured battery SOC (from HA), falling
+        # back to a flow-based reconstruction if HA is unavailable. The battery is
+        # one physical device, so the same SOC seeds every retailer's remainder.
+        soc_min = float(bat.get('soc_min', 0.02)) * cap if bat else 0.02 * cap
+        soc_max = float(bat.get('soc_max', 1.0)) * cap if bat else cap
+        ha_soc = _fetch_battery_soc()
+        if ha_soc is not None:
+            actual_now_soc = ha_soc * cap
+        else:
+            soc = 0.5 * cap
+            actual_now_soc = None
+            for d in sorted(iv_by_date):
+                for j, iv in enumerate(iv_by_date[d]):
+                    chg = iv.get('bat_chg_kwh', 0.0) or 0.0
+                    dis = iv.get('bat_dis_kwh', 0.0) or 0.0
+                    if chg > 0 or dis > 0:
+                        soc += chg - dis
+                        if soc > soc_max: soc = soc_max
+                        elif soc < soc_min: soc = soc_min
+                    if d == inc and j == m - 1:
+                        actual_now_soc = soc
+            actual_now_soc = actual_now_soc if actual_now_soc is not None else 0.5 * cap
+        # Optimise the remainder for each retailer, seeded at the ACTUAL measured
+        # SOC at 'now'. The elapsed (measured) portion keeps each retailer's
+        # optimised sim for consistency with the 5-min / half-hour detail views.
+        custom_sims = {}
+        for r in retailers:
+            now_soc = actual_now_soc
+            sdr = sims.get(r['name'], {}).get(inc)
+            sdr0 = sdr or []
+            elapsed_sim = [{'sim_i': (sdr0[j]['sim_i'] if j < len(sdr0) else iv.get('i_kwh', 0.0)),
+                            'sim_e': (sdr0[j]['sim_e'] if j < len(sdr0) else iv.get('e_kwh', 0.0)),
+                            'soc': (sdr0[j].get('soc', 0.0) if j < len(sdr0) else 0.0),
+                            'chg': 0.0, 'dis': 0.0, 'curt': (sdr0[j].get('curt', 0.0) if j < len(sdr0) else 0.0)}
+                           for j, iv in enumerate(elapsed)]
+            rem = _dispatch_battery(r, remainder_ivs, pea_by_period, bat, seed_soc=now_soc)
+            custom_sims[r['name']] = {inc: elapsed_sim + rem.get(inc, [])}
+        # Accumulate the projected full day (measured elapsed + optimised remainder).
+        saved = iv_by_date.get(inc)
+        iv_by_date[inc] = elapsed + remainder_ivs
+        try:
+            proj_daily = _accumulate(custom_sims)
+        finally:
+            iv_by_date[inc] = saved
+        # Fold the optimised remainder sims into the per-retailer sim so the
+        # 5-min / half-hour detail can render the forecast remainder seamlessly.
+        for r in retailers:
+            s = sims.get(r['name'], {})
+            cur = s.get(inc)
+            if cur is not None:
+                s[inc] = cur[:m] + custom_sims[r['name']][inc][m:]
+        for iv in remainder_ivs:
+            iv['projected'] = True
+        # Projected top-level totals (measured elapsed + a single household
+        # forecast of the remainder — NOT summed across retailers, which would
+        # multiply the physical import/export by the number of retailers).
+        rem_imp = sum(prof_imp[j] for j in range(m, 288))
+        rem_exp = sum(prof_exp[j] for j in range(m, 288))
+        proj_imp = actual_imp + rem_imp
+        proj_exp = actual_exp + rem_exp
+        rem_load = sum(prof[j] for j in range(m, 288))
+        return {
+            'date': inc,
+            'proj_daily': proj_daily.get(inc, {}),
+            'remainder': remainder_ivs,
+            'proj_tot': {
+                'totalImport': proj_imp, 'totalExport': proj_exp,
+                'totalSolar': actual_solar + rem_solar, 'totalLoad': actual_load + rem_load,
+            },
+            'actual_tot': {
+                'totalImport': actual_imp, 'totalExport': actual_exp,
+                'totalSolar': actual_solar, 'totalLoad': actual_load,
+            },
+        }
+
+    proj_info = _forecast_current_day(iv_by_date, retailers, sims, pea_by_period, bat)
+    forecast_remainder = {}
+    if proj_info:
+        daily_data[proj_info['date']] = proj_info['proj_daily']
+        forecast_remainder[proj_info['date']] = proj_info['remainder']
+
     def _finalize(d, r, date_str):
         if r['model'] == 'fixed_tou':
             fs = float(r.get('free_s', 0)); fe = float(r.get('free_e', 0))
@@ -1290,18 +1522,37 @@ def calculate_costs(intervals, retailers):
         for r in retailers:
             cd['retailers'][r['name']] = round(daily_data[date_str][r['name']]['net'], 2)
         cd['cheapest'] = cheapest_name; chart_data.append(cd)
-    
+
+    # Project the incomplete (current) day: override the partial day's measured
+    # totals with the full-day projection (actuals-to-date + optimised remainder)
+    # and flag it so the reports can mark/split it.
+    if proj_info:
+        _ds = daily_summary.get(proj_info['date'])
+        if _ds is not None:
+            _ds['totalImport'] = round(proj_info['proj_tot']['totalImport'], 3)
+            _ds['totalExport'] = round(proj_info['proj_tot']['totalExport'], 3)
+            _ds['totalSolar'] = round(proj_info['proj_tot']['totalSolar'], 3)
+            _ds['totalLoad'] = round(proj_info['proj_tot']['totalLoad'], 3)
+            _ds['projected'] = True
+            _ds['actual_to_date'] = proj_info['actual_tot']
+
     # 5-min detail
     for r in [x for x in retailers if x['model'] in ('fixed_tou', 'hybrid', 'variable', 'variable_optimised')]:
         fm = {}
         for date_str in sorted(iv_by_date.keys()):
             outs = []; spu = 0; hr18 = hr19 = hr20 = 0.0; tik = tek = tic = tec = 0.0
+            # Canonical fixed_tou cost accumulator (respects the off_limit free
+            # pool) so per-interval costs match the daily report's _finalize.
+            d_acc = {'import': 0.0, 'export': 0.0, 'freeUsage': 0.0, 'spExportUsed': 0.0,
+                     'offKwh': 0.0, 'shKwh': 0.0, 'pkKwh': 0.0, 'evKwh': 0.0,
+                     'spExportKwh': 0.0, 'pkExportKwh': 0.0, 'shExportKwh': 0.0, 'offExportKwh': 0.0}
             bp_key = _billing_period_key(date_str, int(r.get('billing_day', 4)))
             pea = pea_by_period.get(bp_key, 0.0)
             sday = sims.get(r['name'], {}).get(date_str)
             if (date_str, r['name']) in used_meas:
                 sday = None
-            for iv_idx, iv in enumerate(iv_by_date[date_str]):
+            comb = list(iv_by_date[date_str]) + forecast_remainder.get(date_str, [])
+            for iv_idx, iv in enumerate(comb):
                 h = iv['h']; i_kwh = iv['i_kwh']; e_kwh = iv['e_kwh']
                 if sday:
                     i_kwh = sday[iv_idx]['sim_i']; e_kwh = sday[iv_idx]['sim_e']
@@ -1345,7 +1596,14 @@ def calculate_costs(intervals, retailers):
                     else:
                         fit_win = 'Sho'
                     sp_ex = bool(in_window(h, spfs, spfe) and r.get('sp_limit', 0) and spu >= r.get('sp_limit', 0))
-                    ic = i_kwh * ir; ec = e_kwh * er
+                    # Cost via the canonical fixed_tou accounting (off_limit free
+                    # pool) so per-interval costs reconcile with the daily report.
+                    _bi = d_acc['import']; _be = d_acc['export']
+                    _fixed_tou_interval(d_acc, r, h, i_kwh, e_kwh)
+                    ic = d_acc['import'] - _bi
+                    ec = d_acc['export'] - _be
+                    ir = (ic / i_kwh) if i_kwh > 0 else 0.0
+                    er = (ec / e_kwh) if e_kwh > 0 else 0.0
                 elif r['model'] in ('variable', 'variable_optimised'):
                     tou = 'Wsh'; ir = iv['aemo'] + r.get('sh_pk', 0)
                     er = iv['aemo'] * r.get('off_fit', 0); fit = 'Wsh'
@@ -1375,7 +1633,8 @@ def calculate_costs(intervals, retailers):
                     ic = i_kwh * ir; ec = e_kwh * er
                 tic += ic; tec += ec
                 o = {'time': iv['time'][:5], 'tou': tou, 'fit': fit, 'fit_win': fit_win, 'sp_ex': sp_ex, 'ik': round(i_kwh, 3), 'ek': round(e_kwh, 3),
-                     'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3)}
+                     'ir': round(ir, 4), 'er': round(er, 4), 'ic': round(ic, 3), 'ec': round(ec, 3),
+                     'projected': iv.get('projected', False)}
                 if sday:
                     o['soc'] = round(sday[iv_idx]['soc'], 2)
                     o['curt'] = round(sday[iv_idx]['curt'], 3)
@@ -1419,7 +1678,16 @@ def daily_report_html(daily_summary, retailers, days=None):
     if days is not None: dates = dates[:max(1, days)]
     for ds in dates:
         d = daily_summary[ds]
-        html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1">{ds}</td>'
+        dlabel = ds + (' *' if d.get('projected') else '')
+        ttl = ''
+        if d.get('projected'):
+            a = d.get('actual_to_date', {})
+            p = d
+            ttl = (f"title=\"Projected (actuals-to-date + optimised forecast of the day's "
+                   f"remainder). Actual: imp {a.get('totalImport', 0):.1f}/exp {a.get('totalExport', 0):.1f} kWh; "
+                   f"Remaining: imp {max(0.0, p['totalImport'] - a.get('totalImport', 0)):.1f}/"
+                   f"exp {max(0.0, p['totalExport'] - a.get('totalExport', 0)):.1f} kWh\"")
+        html += f'<tr style="background:#111"><td style="padding:4px;text-align:left;color:#aaa;position:sticky;left:0;background:#111;z-index:1" {ttl}>{dlabel}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{d["totalImport"]:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{d["totalExport"]:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fa4">{d.get("totalSolar", 0):.1f}</td>'
@@ -1447,6 +1715,9 @@ def daily_report_html(daily_summary, retailers, days=None):
         html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#ccc;font-weight:bold">{cheapest}</td></tr>'
     html += '</tbody></table></div>'
+    html += ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:6px 4px">'
+             'Rows marked * are projected: actuals-to-date plus an optimised best-case '
+             'forecast of the remainder of the day (seeded from the current battery SOC).</div>')
     return html
 
 _PVGIS_TERRIGAL = {1: 4.71, 2: 4.24, 3: 3.58, 4: 2.91, 5: 2.28, 6: 1.78,
@@ -1642,7 +1913,7 @@ def _project_current_month(daily_summary, retailers):
     done_ret = {rn: 0.0 for rn in rnames}
     done_days = 0
     for ds, d in daily_summary.items():
-        if ds[:7] != cm or not d.get('complete', True):
+        if ds[:7] != cm or not (d.get('complete', True) or d.get('projected', False)):
             continue
         done['imp'] += d['totalImport']; done['exp'] += d['totalExport']
         done['solar'] += d.get('totalSolar', 0); done['load'] += d.get('totalLoad', 0)
@@ -1687,7 +1958,7 @@ def monthly_report_html(daily_summary, retailers):
         m = ds[:7]
         if m not in months:
             months[m] = {'imp': 0, 'exp': 0, 'solar': 0, 'load': 0, 'days': 0, 'retailers': {}, 'est': False}
-        if not d.get('complete', True):
+        if not (d.get('complete', True) or d.get('projected', False)):
             continue
         months[m]['imp'] += d['totalImport']
         months[m]['exp'] += d['totalExport']
@@ -1784,20 +2055,32 @@ def _season_label(y, mo):
 
 def seasonal_report_html(daily_summary, retailers):
     seasons = {}
+    m_sum = {}
+    cur = None
     for ds, d in sorted(daily_summary.items()):
         y = int(ds[:4]); mo = int(ds[5:7])
         label = _season_label(y, mo)
         if label not in seasons:
-            seasons[label] = {'imp': 0, 'exp': 0, 'retailers': {}, 'est': False}
-        if not d.get('complete', True):
+            seasons[label] = {'imp': 0, 'exp': 0, 'retailers': {}, 'est': False, 'has_proj': False}
+        if not (d.get('complete', True) or d.get('projected', False)):
             continue
         seasons[label]['imp'] += d['totalImport']
         seasons[label]['exp'] += d['totalExport']
+        if d.get('projected'):
+            seasons[label]['has_proj'] = True
         for r in retailers:
             rn = r['name']
             rr = d['retailers'].get(rn, {})
             v = rr.get('net', 0)
             seasons[label]['retailers'][rn] = seasons[label]['retailers'].get(rn, 0) + v
+        if cur is None or ds > cur:
+            cur = ds
+        cmk = ds[:7]
+        ms = m_sum.setdefault(cmk, {'imp': 0.0, 'exp': 0.0, 'retailers': {}})
+        ms['imp'] += d['totalImport']; ms['exp'] += d['totalExport']
+        for r in retailers:
+            rn = r['name']
+            ms['retailers'][rn] = ms['retailers'].get(rn, 0) + d['retailers'].get(rn, {}).get('net', 0)
     has_est = False
     for m, mm in _estimate_months(daily_summary, retailers).items():
         y = int(m[:4]); mo = int(m[5:7])
@@ -1806,8 +2089,28 @@ def seasonal_report_html(daily_summary, retailers):
             continue
         seasons[label] = {'imp': mm['imp'], 'exp': mm['exp'],
                           'retailers': {rn: mm['retailers'].get(rn, 0) for rn in [r['name'] for r in retailers]},
-                          'est': True}
+                          'est': True, 'has_proj': False}
         has_est = True
+    # Project the current month to month-end and fold the remaining (future)
+    # portion into the current season, so the season total is consistent with
+    # the monthly (proj) row.
+    has_proj = False
+    if cur:
+        cm = cur[:7]
+        proj = _project_current_month(daily_summary, retailers)
+        if proj:
+            pm, pmm = proj
+            if pm == cm:
+                y = int(cm[:4]); mo = int(cm[5:7]); cl = _season_label(y, mo)
+                if cl in seasons:
+                    ms = m_sum.get(cm, {'imp': 0.0, 'exp': 0.0, 'retailers': {}})
+                    seasons[cl]['imp'] += pmm['imp'] - ms['imp']
+                    seasons[cl]['exp'] += pmm['exp'] - ms['exp']
+                    for rn in [r['name'] for r in retailers]:
+                        seasons[cl]['retailers'][rn] = (seasons[cl]['retailers'].get(rn, 0)
+                                                        + pmm['retailers'].get(rn, 0) - ms['retailers'].get(rn, 0))
+                    seasons[cl]['has_proj'] = True
+                    has_proj = True
     html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">'
     html += '<thead><tr style="background:#1a1a1a;color:white">'
     html += '<th style="padding:4px;text-align:left;position:sticky;left:0;background:#1a1a1a;z-index:2">Season</th>'
@@ -1822,6 +2125,8 @@ def seasonal_report_html(daily_summary, retailers):
             rowbg = '#0d1420'; labcol = '#7b8ea8'; estcls = 'font-style:italic'; slbl = f'~{s}'
         else:
             rowbg = '#111'; labcol = '#aaa'; estcls = ''; slbl = s
+        if ss.get('has_proj'):
+            slbl = f'{slbl} *'
         html += f'<tr style="background:{rowbg}"><td style="padding:4px;text-align:left;color:{labcol};{estcls};position:sticky;left:0;background:{rowbg};z-index:1">{slbl}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#8cf">{ss["imp"]:.1f}</td>'
         html += f'<td style="padding:4px;text-align:right;color:#fc8">{ss["exp"]:.1f}</td>'
@@ -1844,10 +2149,11 @@ def seasonal_report_html(daily_summary, retailers):
         html += f'<td style="padding:4px;text-align:right;color:{c}">${v:.2f}</td>'
     html += f'<td style="padding:4px;text-align:right;color:#4CAF50">{t_cheapest}</td></tr>'
     html += '</tbody></table></div>'
-    if has_est:
+    if has_est or has_proj:
         html += ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:6px 4px">'
                  'Rows prefixed with ~ are guestimates (PVGIS solar expectations calibrated to '
-                 'your system + seasonal load averages). They drop off automatically once actuals arrive.</div>')
+                 'your system + seasonal load averages). Rows marked * include a month-to-date '
+                 'projection carried to month-end. Both drop off automatically once actuals arrive.</div>')
     return html
 
 def fivemin_html(fm, ds, rname, date_str):
@@ -1885,14 +2191,25 @@ def fivemin_html(fm, ds, rname, date_str):
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
     t += '<th style="padding:4px 6px;text-align:right">SOC %</th><th style="padding:4px 6px;text-align:right">Curt kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Net $</th></tr></thead><tbody>'
+    first_proj = True
     for iv in ivs:
         if iv.get('time') == 'TOTAL': continue
+        is_proj = iv.get('projected', False)
         nt = iv.get('ic', 0) - iv.get('ec', 0)
         soc = iv.get('soc')
         curt = iv.get('curt', 0)
         soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{soc/39.71*100:.0f}</td>' if soc is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
         curt_cell = f'<td style="padding:2px 6px;text-align:right;color:#f99">{curt:.3f}</td>' if curt else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
-        t += (f'<tr><td style="padding:2px 6px;color:#aaa">{iv["time"]}</td>'
+        if is_proj:
+            if first_proj:
+                t += '<tr><td colspan="11" style="padding:2px 6px;color:#7b8ea8;font-style:italic;background:#0a0f18;border-top:1px solid #2a3a4a">↓ forecast remainder (optimised best case)</td></tr>'
+                first_proj = False
+            rowstyle = ' style="background:#0a0f18;font-style:italic;color:#9fb"'
+            tm = iv["time"] + ' *'
+        else:
+            rowstyle = ''
+            tm = iv["time"]
+        t += (f'<tr{rowstyle}><td style="padding:2px 6px;color:#aaa">{tm}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{iv.get("tou","")}</td>'
               f'<td style="padding:2px 6px;color:#fc8">{iv.get("fit","")}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:#8cf">{iv["ik"]:.3f}</td>'
@@ -1942,6 +2259,7 @@ def hourly_html(fm, ds, rname, date_str):
         fw = iv.get('fit_win')
         if fw: b['fit_win'] = fw
         if iv.get('sp_ex'): b['sp_ex'] = True
+        if iv.get('projected'): b['projected'] = True
         b['tou_counts'][iv.get('tou', '')] = b['tou_counts'].get(iv.get('tou', ''), 0) + 1
         ft = iv.get('fit', ''); b['fit_counts'][ft] = b['fit_counts'].get(ft, 0) + 1
 
@@ -1961,6 +2279,8 @@ def hourly_html(fm, ds, rname, date_str):
     t += '<th style="padding:4px 6px;text-align:right">Avg Imp $/kWh</th><th style="padding:4px 6px;text-align:right">Avg Exp $/kWh</th>'
     t += '<th style="padding:4px 6px;text-align:right">Imp $</th><th style="padding:4px 6px;text-align:right">Exp $</th>'
     t += '<th style="padding:4px 6px;text-align:right">Net $</th></tr></thead><tbody>'
+    any_proj = any(b.get('projected') for b in buckets.values())
+    first_proj = True
     for hk in sorted(buckets.keys()):
         bv = buckets[hk]
         bh, bm = map(int, hk.split(':'))
@@ -1974,7 +2294,17 @@ def hourly_html(fm, ds, rname, date_str):
             fit_label = '*' + fit_label
         dom_tou = max(bv['tou_counts'], key=bv['tou_counts'].get) if bv['tou_counts'] else ''
         soc_cell = f'<td style="padding:2px 6px;text-align:right;color:#9cf">{bv["last_soc"]/39.71*100:.0f}</td>' if bv['last_soc'] is not None else '<td style="padding:2px 6px;text-align:right;color:#333">-</td>'
-        t += (f'<tr><td style="padding:2px 6px;color:#aaa">{label}</td>'
+        is_proj = bv.get('projected', False)
+        if is_proj:
+            if first_proj:
+                t += '<tr><td colspan="10" style="padding:2px 6px;color:#7b8ea8;font-style:italic;background:#0a0f18;border-top:1px solid #2a3a4a">↓ forecast remainder (optimised best case)</td></tr>'
+                first_proj = False
+            rowstyle = 'background:#0a0f18;font-style:italic;color:#9fb'
+            lbl = label + ' *'
+        else:
+            rowstyle = ''
+            lbl = label
+        t += (f'<tr style="{rowstyle}"><td style="padding:2px 6px;color:#aaa">{lbl}</td>'
               f'<td style="padding:2px 6px;color:#ccc">{dom_tou}</td>'
               f'<td style="padding:2px 6px;color:#fc8">{fit_label}</td>'
               f'{soc_cell}'
@@ -1986,7 +2316,12 @@ def hourly_html(fm, ds, rname, date_str):
               f'<td style="padding:2px 6px;text-align:right;color:#8fbc8f">{bv["ec"]:.3f}</td>'
               f'<td style="padding:2px 6px;text-align:right;color:{"#ff5252" if inet>=0 else "#4CAF50"}">{inet:.3f}</td></tr>')
     t += '</tbody></table></div>'
-    return hdr + t
+    banner = ''
+    if ds.get(date_str, {}).get('projected'):
+        banner = ('<div style="color:#7b8ea8;font-size:12px;font-style:italic;padding:4px 10px">'
+                  'Rows marked * are forecast (optimised best case from the current battery SOC). '
+                  'They extend the measured intervals to the end of the day.</div>')
+    return hdr + banner + t
 
 
 # ─── Dashboard (Tabbed UI) ────────────────────────────────────────────────────
